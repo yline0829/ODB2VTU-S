@@ -67,6 +67,9 @@ class App(tk.Tk):
         self.gnd_mode_var = tk.StringVar(value='仅18滑移系 / 18 slips only')
         self.gnd_slide_diff_var = tk.BooleanVar(value=False)
         self.gnd_slide_ref_var = tk.StringVar(value='滑动第一帧 / First sliding frame')
+        self.frame_policy_var = tk.StringVar(value='合并/保留既有帧 / Merge')
+        self.field_policy_var = tk.StringVar(value='合并/保留既有变量 / Merge')
+        self.cleanup_removed_var = tk.BooleanVar(value=False)
 
         self._style()
         self._build_topbar()
@@ -265,6 +268,27 @@ class App(tk.Tk):
         self.ref_step_cb.bind('<<ComboboxSelected>>',lambda e:self.populate_ref_frames())
         self.ref_frame_cb=ttk.Combobox(d,state='readonly',width=10); self.ref_frame_cb.pack(side='left')
 
+        policy=ttk.LabelFrame(right,text='增量更新策略 / Incremental Update Policy',padding=8); policy.pack(fill='x',pady=(0,7))
+        pr1=ttk.Frame(policy); pr1.pack(fill='x')
+        ttk.Label(pr1,text='帧 / Frames').pack(side='left')
+        self.frame_policy_cb=ttk.Combobox(
+            pr1,textvariable=self.frame_policy_var,state='readonly',width=34,
+            values=['合并/保留既有帧 / Merge','同步当前选择 / Sync'])
+        self.frame_policy_cb.pack(side='left',padx=(6,16))
+        ttk.Label(pr1,text='变量 / Fields').pack(side='left')
+        self.field_policy_cb=ttk.Combobox(
+            pr1,textvariable=self.field_policy_var,state='readonly',width=36,
+            values=['合并/保留既有变量 / Merge','同步当前变量 / Sync'])
+        self.field_policy_cb.pack(side='left',padx=6)
+        pr2=ttk.Frame(policy); pr2.pack(fill='x',pady=(5,0))
+        ttk.Checkbutton(
+            pr2,text='同步帧时同时删除已移除帧的 VTU / Delete removed-frame VTU files',
+            variable=self.cleanup_removed_var).pack(side='left')
+        ttk.Label(
+            policy,
+            text='Merge 为安全默认：未再次选择的旧帧/旧变量均保留；Sync 才执行删除语义。',
+            foreground='#555').pack(anchor='w',pady=(5,0))
+
         summary_box=ttk.LabelFrame(right,text='选择摘要 / Selection Summary',padding=6); summary_box.pack(fill='both',expand=True,pady=(0,7))
         self.summary=tk.Text(summary_box,height=8,wrap='none',state='disabled')
         self.summary.pack(fill='both',expand=True)
@@ -287,7 +311,8 @@ class App(tk.Tk):
         self.frame_cb.bind('<<ComboboxSelected>>', lambda e:self.update_export_summary())
         for _v in (self.series_var,self.mises_var,self.ipf_var,self.ipf_dir,self.bbox_var,
                    self.delta_var,self.delta_field,self.gnd_diff_var,self.gnd_mode_var,
-                   self.gnd_slide_diff_var,self.gnd_slide_ref_var,self.output_file):
+                   self.gnd_slide_diff_var,self.gnd_slide_ref_var,self.output_file,
+                   self.frame_policy_var,self.field_policy_var,self.cleanup_removed_var):
             try: _v.trace_add('write', lambda *_: self.update_export_summary())
             except Exception: pass
         self.after_idle(self.update_export_summary)
@@ -586,6 +611,10 @@ class App(tk.Tk):
                 self.ref_step_cb.get() or '<step>',
                 self.ref_frame_cb.get() or '<frame>'))
         lines.append('Derived  : %s' % (', '.join(derived) if derived else '<none>'))
+        lines.append('Frame policy : %s' % self.frame_policy_var.get())
+        lines.append('Field policy : %s' % self.field_policy_var.get())
+        if self.cleanup_removed_var.get():
+            lines.append('Cleanup      : delete VTU files removed by frame sync')
         if self.bbox_var.get().strip(): lines.append('BBox     : %s' % self.bbox_var.get().strip())
         lines.append('Output   : %s' % (self.output_file.get().strip() or '<not set>'))
         self.summary.configure(state='normal')
@@ -620,7 +649,10 @@ class App(tk.Tk):
         if not fs and not self.mises_var.get() and not self.ipf_var.get() and not self.delta_var.get() and not self.gnd_diff_var.get() and not self.gnd_slide_diff_var.get():messagebox.showerror('Export','请选择场变量或派生场');return
         if self.ipf_var.get() and not Path(self.inp_var.get()).exists():messagebox.showerror('IPF','Initial IPF需要有效INP');return
         if self.gnd_diff_var.get() and not Path(self.gnd_dat_var.get()).exists():messagebox.showerror('GND','GND差值需要有效的 gnd_field.dat');return
-        common=['--odb',self.odb_var.get(),'--instance',self.instance_cb.get(),'--fields',','.join(fs)]
+        field_policy='sync' if 'Sync' in self.field_policy_var.get() else 'merge'
+        frame_policy='sync' if 'Sync' in self.frame_policy_var.get() else 'merge'
+        common=['--odb',self.odb_var.get(),'--instance',self.instance_cb.get(),'--fields',','.join(fs),
+                '--field-policy',field_policy]
         sv=self.set_cb.get()
         if sv and sv!=WHOLE: common += ['--element-set','__ALL_GRAINS__' if sv==ALL_GRAINS else sv]
         if self.bbox_var.get().strip():common += ['--bbox',self.bbox_var.get().strip()]
@@ -636,7 +668,10 @@ class App(tk.Tk):
         if self.series_var.get():
             if not self.selected_states:messagebox.showerror('Series','请添加Step/Frame状态');return
             SERIES_FILE.write_text('\n'.join('%s\t%d'%x for x in self.selected_states)+'\n',encoding='utf-8-sig')
-            args=[SERIES_PY]+common+['--selection-file',SERIES_FILE,'--out-pvd',self.output_file.get()]
+            args=[SERIES_PY]+common+[
+                '--selection-file',SERIES_FILE,'--out-pvd',self.output_file.get(),
+                '--frame-policy',frame_policy,
+                '--cleanup-removed-frames','1' if self.cleanup_removed_var.get() else '0']
         else:
             if not self.step_cb.get() or not self.frame_cb.get():return
             args=[EXPORT_PY]+common+['--step',self.step_cb.get(),'--frame',self.frame_cb.get(),'--out',self.output_file.get()]

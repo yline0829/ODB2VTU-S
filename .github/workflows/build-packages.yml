@@ -1,0 +1,41 @@
+name: Build packages
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'packaging/**'
+      - 'scripts/build_release.py'
+      - 'assets/icons/**'
+      - 'VERSION'
+      - '.github/workflows/build-packages.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Build release ZIPs
+        run: python scripts/build_release.py
+      - name: Show package contents
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          for p in sorted(Path('dist').glob('*.zip')):
+              print('\n', p.name, p.stat().st_size)
+              with zipfile.ZipFile(p) as z:
+                  for n in z.namelist():
+                      print('  ', n)
+          PY
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ODB2VTU-S-packages
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 14

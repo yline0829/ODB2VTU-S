@@ -170,9 +170,7 @@ def atomic_write_json(path, data):
     with open(tmp, "w") as f:
         json.dump(data, f, indent=2, sort_keys=True)
         f.write("\n")
-    if os.path.exists(path):
-        os.remove(path)
-    os.rename(tmp, path)
+    os.replace(tmp, path)
 
 
 def same_source_identity(manifest, source):
@@ -199,6 +197,5 @@ def parse_vtu_field_names(path):
 
 
 def atomic_replace(src, dst):
-    if os.path.exists(dst):
-        os.remove(dst)
-    os.rename(src, dst)
+    # Failure leaves the existing VTU intact; no unlink-before-rename window.
+    os.replace(src, dst)

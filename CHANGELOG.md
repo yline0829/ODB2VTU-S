@@ -2,6 +2,16 @@
 
 All notable changes will be documented in this file.
 
+### Performance optimization (same v0.2.0 test version)
+- Changed-frame Field Merge now uses the existing VTU arrays and reads only newly requested SDV/derived families from the ODB, provided that source identity, ODB revision, mesh and field provenance are compatible.
+- Old VTU arrays are transferred into the new file by bounded-memory, memory-mapped streaming; unchanged arrays are not recomputed from the ODB.
+- Reused the parsed GND DAT, Initial IPF, scalar-difference reference and sliding GND reference across frames during one series run.
+- When both GND difference modes are enabled, SDV11–28 is read once per frame and shared.
+- Reduced ASCII VTU output overhead by batching writes; removed unused GND direction maps in slips-only mode.
+- Added per-frame INCREMENTAL/FULL completion timing and derived/cache regression tests.
+- The final VTU is still safely replaced as one file after successful generation; unchanged frames are skipped entirely.
+- If geometry or existing VTU data cannot be validated, the exporter falls back to the original safe full-frame export.
+
 ## [0.2.0] - 2026-10-14
 
 ### Fixed (folder inventory and Windows progress)

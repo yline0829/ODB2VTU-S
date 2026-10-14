@@ -1398,7 +1398,9 @@ function RunExport {
                " --selection-file " + (Q $selectionFile) +
                " --out-pvd " + (Q $txtOutput.Text) +
                " --fields " + (Q $fields) +
-               $setArg + $bboxArg + $diffArg + $derivedArg
+               $setArg + $bboxArg + $diffArg + $derivedArg + $policyArg +
+               " --frame-policy " + $framePolicy +
+               " --cleanup-removed-frames " + $cleanupRemoved
     }
 
     Msg($cmd)

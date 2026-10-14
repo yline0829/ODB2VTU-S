@@ -5,8 +5,13 @@ on:
     paths:
       - 'src/**'
       - 'packaging/**'
-      - 'scripts/build_release.py'
+      - 'scripts/**'
       - 'assets/icons/**'
+      - 'tests/**'
+      - 'docs/**'
+      - 'README.md'
+      - 'README.zh-CN.md'
+      - 'CHANGELOG.md'
       - 'VERSION'
       - '.github/workflows/build-packages.yml'
   workflow_dispatch:
@@ -19,23 +24,52 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Build release ZIPs
+      - name: Build Windows and Linux software ZIPs
         run: python scripts/build_release.py
-      - name: Show package contents
+      - name: Package complete repository source at this commit
+        run: |
+          VERSION="$(cat VERSION)"
+          git archive --format=zip --prefix="ODB2VTU-S-v${VERSION}/" HEAD -o "dist/ODB2VTU-S_Source_v${VERSION}.zip"
+      - name: Run backend regression tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Validate ZIP files and expected source modules
         run: |
           python - <<'PY'
           from pathlib import Path
           import zipfile
-          for p in sorted(Path('dist').glob('*.zip')):
-              print('\n', p.name, p.stat().st_size)
+          import sys
+          version = Path('VERSION').read_text().strip()
+          dist = Path('dist')
+          needed = [
+              f'ODB2VTU-S_Source_v{version}.zip',
+              f'ODB2VTU-S_Exporter_Windows_Portable_v{version}.zip',
+              f'ODB2VTU-S_CPFEM_Postprocessor_Windows_Portable_v{version}.zip',
+              f'ODB2VTU-S_Linux_Tools_v{version}.zip',
+          ]
+          for filename in needed:
+              p = dist / filename
+              assert p.is_file() and p.stat().st_size > 0, filename
               with zipfile.ZipFile(p) as z:
-                  for n in z.namelist():
-                      print('  ', n)
+                  assert z.testzip() is None, filename
+                  names = z.namelist()
+                  if 'Source' in filename:
+                      for rel in ('README.md', 'README.zh-CN.md',
+                                  'src/data_exporter/backend/odb_export_series.py',
+                                  'src/data_exporter/backend/odb_vtu_incremental.py',
+                                  'tests/test_vtu_incremental_perf.py'):
+                          assert f'ODB2VTU-S-v{version}/' + rel in names, rel
+                  if 'Exporter_Windows' in filename:
+                      for rel in ('odb_export_series.py', 'odb_vtu_incremental.py',
+                                  'ODB2VTU-S_Exporter.ps1'):
+                          assert rel in names, rel
+                  if 'Linux_Tools' in filename:
+                      assert 'ODB2VTU-S_Exporter_Linux/odb_vtu_incremental.py' in names
+                  print(filename, p.stat().st_size, 'bytes /', len(names), 'files')
           PY
-      - name: Upload packages
+      - name: Upload downloadable source and software ZIPs
         uses: actions/upload-artifact@v4
         with:
-          name: ODB2VTU-S-packages
+          name: ODB2VTU-S-v0.2.0-source-and-software
           path: dist/*.zip
           if-no-files-found: error
           retention-days: 14

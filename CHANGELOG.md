@@ -2,6 +2,34 @@
 
 All notable changes will be documented in this file.
 
+## [0.2.0] - 2026-10-14
+
+### Added
+- Two-level incremental export model for **frames** and **fields**.
+- Frame policy:
+  - **Merge**: add/update selected frames while retaining previously active frames.
+  - **Sync**: synchronize the active PVD timeline to the current Step/Frame selection.
+- Field policy:
+  - **Merge**: preserve existing variables and add newly selected variables.
+  - **Sync**: rebuild selected frames to match the current variable selection, enabling explicit field deletion.
+- Per-export JSON manifest for PVD time series: `_ODB2VTUS_manifest.json`.
+- Single-frame sidecar manifest: `<output>.vtu.odb2vtus.json`.
+- Stable, collision-resistant VTU filenames based on Step identity + Frame index.
+- Optional physical cleanup of VTU files removed by Frame Sync.
+- Linux and Windows GUI controls for Frame/Field Merge/Sync policies.
+
+### Changed
+- PVD files are rebuilt only after all selected frame updates succeed.
+- Changed VTUs are written through a temporary file and atomically replace the previous VTU.
+- Repeated exports now use manifest state rather than a single global export signature.
+- Default behavior is non-destructive: omitted old frames/fields are preserved unless Sync is explicitly selected.
+
+### Fixed
+- Adding a variable to an already exported frame no longer removes variables exported previously.
+- Adding/removing frames no longer depends on selection-order sequence numbers in VTU filenames.
+- Reordering or inserting selected frames no longer creates a cascade of duplicate frame files.
+
+
 ## [0.1.2] - 2026-10-07
 
 ### Added

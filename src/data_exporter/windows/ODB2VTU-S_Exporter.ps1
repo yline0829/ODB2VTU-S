@@ -1403,9 +1403,44 @@ function RunExport {
                " --cleanup-removed-frames " + $cleanupRemoved
     }
 
-    Msg($cmd)
-    $txtStatus.Text = "Export running..."
-    Start-Process cmd.exe -ArgumentList "/k",$cmd
+    # Launch through a small progress wrapper. The banner appears before
+    # Abaqus/Python starts, so long ODB initialization is not mistaken for a
+    # blank or frozen console. The window stays open with an explicit status.
+    $runnerPath = Join-Path $env:TEMP ("ODB2VTUS_Export_" + [Guid]::NewGuid().ToString("N") + ".cmd")
+    $runnerLines = @(
+        '@echo off'
+        'title ODB2VTU-S Export - Active'
+        'echo ============================================================'
+        'echo ODB2VTU-S v0.2.0 - VTU / PVD incremental export'
+        'echo ============================================================'
+        'echo Status: STARTING Abaqus Python'
+        'echo Large ODB files may take time to open or read field arrays.'
+        'echo Do NOT close this window while export is in progress.'
+        'echo The backend will report Step/Frame and completed VTU files.'
+        'echo ------------------------------------------------------------'
+        'echo.'
+        ('call ' + $cmd)
+        'set "ODB2VTUS_RC=%errorlevel%"'
+        'echo.'
+        'if not "%ODB2VTUS_RC%"=="0" goto export_failed'
+        'title ODB2VTU-S Export - SUCCESS'
+        'echo ============================================================'
+        'echo SUCCESS: export finished. You may close this window.'
+        'echo ============================================================'
+        'goto export_end'
+        ':export_failed'
+        'title ODB2VTU-S Export - FAILED'
+        'echo ============================================================'
+        'echo FAILED: backend returned error %ODB2VTUS_RC%.'
+        'echo Review the messages above before closing this window.'
+        'echo ============================================================'
+        ':export_end'
+    )
+    [System.IO.File]::WriteAllLines($runnerPath, [string[]]$runnerLines, [System.Text.Encoding]::Default)
+    Msg("Starting export; CMD will show progress immediately.")
+    Msg("Output console remains open until you close it.")
+    $txtStatus.Text = "Export running - see CMD status"
+    Start-Process cmd.exe -ArgumentList "/k",(Q $runnerPath)
 }
 
 

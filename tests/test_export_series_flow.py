@@ -148,6 +148,52 @@ class SeriesFlowTest(unittest.TestCase):
         self.assertEqual(names[2], "fake_series_000003_Normal_Load_f000002.vtu")
         self.assertIn("Unchanged/skipped states: 2", second)
 
+    def test_unindexed_unselected_extra_vtu_does_not_abort_52_frame_style_export(self):
+        # Simulates the user's error: 52 selected states and 62 complete
+        # VTUs on disk, with ten previously generated, unindexed extras.
+        # A minimal ODB mock has only three frames; two selected/indexed and
+        # one unindexed extra is sufficient to exercise the identical branch.
+        extra = "fake_series_000062_Normal_Load_f000002.vtu"
+        path = os.path.join(self.folder, extra)
+        complete_vtu(path)
+        earlier = os.path.getmtime(self.odb_path) + 30
+        os.utime(path, (earlier, earlier))
+        log = self.run_series([0, 1])
+        self.assertIn("ignoring 1 unindexed, unselected extra VTU", log)
+        self.assertIn("Unchanged/skipped states: 2", log)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.pvd_names(), [self.legacy0, self.legacy1])
+        self.assertTrue(os.path.exists(path))
+        self.assertNotIn(extra, self.pvd_names())
+
+    def test_unverified_extra_selected_for_export_is_not_silently_reused(self):
+        extra = "fake_series_000062_Normal_Load_f000002.vtu"
+        path = os.path.join(self.folder, extra)
+        complete_vtu(path)
+        earlier = os.path.getmtime(self.odb_path) + 30
+        os.utime(path, (earlier, earlier))
+        # An explicitly selected extra with no verifiable provenance
+        # must still be refused, and the published PVD must stay intact.
+        with open(self.selection, "w") as f:
+            f.write("Normal_Load\\t2\\n")
+        argv = [
+            "odb_export_series.py",
+            "--odb", self.odb_path, "--instance", "PART-1-1",
+            "--selection-file", self.selection, "--out-pvd", self.pvd,
+            "--fields", "SDV11", "--frame-policy", "merge",
+            "--field-policy", "merge",
+        ]
+        out = io.StringIO()
+        with mock.patch.object(series, "openOdb", return_value=DummyODB()), \\
+             mock.patch.object(series, "selected_elements",
+                               return_value=([Element()], {}, {})), \\
+             mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(out):
+            rc = series.main()
+        self.assertEqual(rc, 99)
+        self.assertIn("lack trustworthy export metadata", out.getvalue())
+        self.assertEqual(self.pvd_names(), [self.legacy0, self.legacy1])
+        self.assertTrue(os.path.exists(path))
+
     def test_new_field_reuses_old_native_field(self):
         self.run_series([0, 1])
         self.calls[:] = []

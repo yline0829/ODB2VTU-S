@@ -231,13 +231,12 @@ def main():
             if old is not None and old.get("file") == filename:
                 continue
 
-            # A manifest created by an earlier v0.2 build may point to a
-            # missing file. Recover by scanning, not by inventing a new name.
-            if old is not None and old.get("output_spec") is not None:
-                old["file"] = filename
-                old["active"] = True
-                print("RECOVERED MANIFEST FILE: %s -> %s" % (key, filename))
-                continue
+            # If an old manifest points at a different file, its field
+            # metadata cannot be transplanted to this discovered VTU.
+            # The selected on-disk file must be independently verified.
+            if old is not None:
+                print("MANIFEST RECONCILIATION: %s ; recorded %s ; found %s" %
+                      (key, old.get("file"), filename))
 
             path = os.path.join(frame_dir, filename)
             # A legacy signature may have been updated by a failed export.

@@ -248,9 +248,21 @@ def main():
 
         adopted = 0
         unverified = []
+        ignored_orphans = []
+        selected_keys = set(state_key(s, f) for s, f in selected)
         indexed_files = _pvd_filenames(pvd)
         for key, filename in found.items():
             old = frames.get(key)
+
+            # A folder may contain complete VTUs from a previous interrupted
+            # run which were never published in the PVD or manifest. They are
+            # *not* proof of a reusable frame, but also must not block unrelated
+            # selected frames. Leave them untouched and out of the PVD.
+            if (key not in selected_keys and filename not in indexed_files and
+                    old is None):
+                ignored_orphans.append((key, filename))
+                continue
+
             if old is not None and old.get("file") == filename:
                 continue
 
@@ -304,8 +316,14 @@ def main():
         if adopted:
             print("VTU INVENTORY: adopted %d legacy states; existing filenames kept." %
                   adopted)
+        if ignored_orphans:
+            print("VTU INVENTORY: ignoring %d unindexed, unselected extra VTU "
+                  "state(s); files remain on disk." % len(ignored_orphans))
+            for key, filename in ignored_orphans[:10]:
+                print("  PRESERVED EXTRA (not imported): %s / %s" % (key, filename))
+            if len(ignored_orphans) > 10:
+                print("  ... and %d more." % (len(ignored_orphans) - 10))
         print("VTU INVENTORY: %d states ready for incremental export." % len(frames))
-        selected_keys = set(state_key(s, f) for s, f in selected)
 
         # Frame-level semantics:
         # merge: current selection is added/updated; omitted old frames remain active.

@@ -74,6 +74,19 @@ If a target time is not stored exactly, the nearest actual ODB frame is selected
 
 > Note: the current generic field-comparison feature is a **stored-frame difference**, not continuous temporal interpolation between two frames. True time interpolation of arbitrary fields can be added as a future feature.
 
+## Incremental frame / field updates
+
+ODB2VTU-S v0.2 uses a two-level export policy:
+
+- **Frame Merge** (default): selected Step/Frame states are added or updated; previously exported states remain active.
+- **Frame Sync**: the active PVD timeline is synchronized to the current Step/Frame selection.
+- **Field Merge** (default): existing variables in a frame are preserved and newly selected variables are added.
+- **Field Sync**: selected frames are rebuilt to match the current variable selection, which is the explicit variable-deletion operation.
+
+The safe default is therefore **Merge + Merge**: repeated export does not silently delete old frames or fields.
+
+See [Incremental export logic](docs/incremental-export.md) for the complete state-management rules.
+
 ## Screenshots
 
 ### 1. ODB2VTU-S Exporter

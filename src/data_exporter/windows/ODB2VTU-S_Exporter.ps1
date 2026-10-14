@@ -453,7 +453,7 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
                         Margin="6,6,6,0"
                         Padding="8">
                     <Grid>
-                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="120"/>
                             <ColumnDefinition Width="*"/>
@@ -484,6 +484,29 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
                                 <TextBox x:Name="txtOutput" Grid.Column="1"/>
                                 <Button x:Name="btnBrowseOutput" Grid.Column="2" Content="..." Margin="4,0,0,0"/>
                             </Grid>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Margin="0,8,0,0">
+                            <Separator Margin="0,0,0,7"/>
+                            <TextBlock Text="增量更新策略 / Incremental Update Policy"
+                                       FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <WrapPanel>
+                                <TextBlock Text="Frames" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                <ComboBox x:Name="cmbFramePolicy" Width="210" SelectedIndex="0">
+                                    <ComboBoxItem Content="合并/保留既有帧 / Merge" Tag="merge"/>
+                                    <ComboBoxItem Content="同步当前选择 / Sync" Tag="sync"/>
+                                </ComboBox>
+                                <TextBlock Text="Fields" VerticalAlignment="Center" Margin="12,0,5,0"/>
+                                <ComboBox x:Name="cmbFieldPolicy" Width="225" SelectedIndex="0">
+                                    <ComboBoxItem Content="合并/保留既有变量 / Merge" Tag="merge"/>
+                                    <ComboBoxItem Content="同步当前变量 / Sync" Tag="sync"/>
+                                </ComboBox>
+                            </WrapPanel>
+                            <CheckBox x:Name="chkCleanupRemoved"
+                                      Content="同步帧时同时删除已移除帧的 VTU / Delete removed-frame VTU files"
+                                      IsChecked="False" Margin="0,5,0,0"/>
+                            <TextBlock Text="Merge 为安全默认；只有 Sync 才执行删除语义。"
+                                       Foreground="#555" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -582,6 +605,7 @@ $names = @(
 "grpGND","chkGNDDiff","lblGNDDat","txtGNDDat","btnBrowseGNDDat","lblGNDMode","cmbGNDMode","chkGNDSlideDiff","lblGNDSlideRef","cmbGNDSlideRef","txtGNDHint",
 "grpDifference","chkDelta","lblDiffField","cmbDeltaField","lblRefStep","cmbRefStep","lblRefFrame","cmbRefFrame",
 "lblBBox","txtBBox","chkAutoOutput","btnChooseOutputFolder","lblOutputFile","txtOutput","btnBrowseOutput",
+"cmbFramePolicy","cmbFieldPolicy","chkCleanupRemoved",
 "hdrSummary","txtSummary","hdrMessages","btnClearMessages","txtMessages",
 "txtStatus","txtStatusRight"
 )
@@ -1056,6 +1080,12 @@ function UpdateSummary {
     } else {
         $s += "Output mode : Custom folder -> " + $script:customFieldOutputDir + "`r`n"
     }
+
+    $fp = "merge"; if($cmbFramePolicy.SelectedItem){ $fp = $cmbFramePolicy.SelectedItem.Tag.ToString() }
+    $fldp = "merge"; if($cmbFieldPolicy.SelectedItem){ $fldp = $cmbFieldPolicy.SelectedItem.Tag.ToString() }
+    $s += "Frame policy : " + $fp + "`r`n"
+    $s += "Field policy : " + $fldp + "`r`n"
+    if($chkCleanupRemoved.IsChecked){ $s += "Cleanup removed VTU : yes`r`n" }
     
     $s += (L "OutputFile") + " : " + $txtOutput.Text
     $txtSummary.Text = $s
@@ -1338,6 +1368,14 @@ function RunExport {
         $derivedArg += " --gnd-slide-diff 1 --gnd-slide-ref " + $sref
     }
 
+    $framePolicy = "merge"
+    if($cmbFramePolicy.SelectedItem -ne $null){ $framePolicy = $cmbFramePolicy.SelectedItem.Tag.ToString() }
+    $fieldPolicy = "merge"
+    if($cmbFieldPolicy.SelectedItem -ne $null){ $fieldPolicy = $cmbFieldPolicy.SelectedItem.Tag.ToString() }
+    $cleanupRemoved = 0
+    if($chkCleanupRemoved.IsChecked){ $cleanupRemoved = 1 }
+    $policyArg = " --field-policy " + $fieldPolicy
+
     if(-not $chkSeries.IsChecked){
         $cmd = "abaqus python " + (Q $exportPy) +
                " --odb " + (Q $txtOdb.Text) +
@@ -1346,7 +1384,7 @@ function RunExport {
                " --frame " + (FrameIndex $cmbFrame) +
                " --out " + (Q $txtOutput.Text) +
                " --fields " + (Q $fields) +
-               $setArg + $bboxArg + $diffArg + $derivedArg
+               $setArg + $bboxArg + $diffArg + $derivedArg + $policyArg
     }
     else{
         if(-not (WriteSelectionFile)){
@@ -2659,6 +2697,9 @@ foreach($c in @($cmbElementSet,$cmbFrame,$cmbDeltaField,$cmbRefFrame)){
 
 $txtBBox.Add_TextChanged({ UpdateSummary })
 $txtOutput.Add_TextChanged({ UpdateSummary })
+$cmbFramePolicy.Add_SelectionChanged({ UpdateSummary })
+$cmbFieldPolicy.Add_SelectionChanged({ UpdateSummary })
+$chkCleanupRemoved.Add_Click({ UpdateSummary })
 $txtOdb.Add_TextChanged({ $txtOdb.ToolTip = $txtOdb.Text })
 
 $panelSeries.IsEnabled = $false

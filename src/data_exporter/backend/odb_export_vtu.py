@@ -814,7 +814,13 @@ def export_frame(odb, instance_name, step_name, frame_index, out_path,
 
     arrays = {}
 
-    for name in fields:
+    print("  Reading %d native field(s) for %s / frame %d ..." %
+          (len(fields), step_name, frame_index))
+    sys.stdout.flush()
+    for field_no, name in enumerate(fields, 1):
+        if field_no == 1 or field_no == len(fields) or field_no % 5 == 0:
+            print("  Field [%d/%d]: %s" % (field_no, len(fields), name))
+            sys.stdout.flush()
         arr = extract_field(frame, name, inst, elem_labels, node_labels)
         if arr is not None:
             arrays[name] = arr
@@ -872,7 +878,12 @@ def export_frame(odb, instance_name, step_name, frame_index, out_path,
             dv[lab] = [tv[lab][0] - rv[lab][0]]
         arrays["DELTA_" + delta_field] = ("cell", 1, dv)
 
+    print("  Writing VTU: %s ; fields: %d ; elements: %d" %
+          (os.path.basename(out_path), len(arrays), len(elems)))
+    sys.stdout.flush()
     write_vtu(out_path, elems, node_map, arrays, grain_ids)
+    print("  VTU write complete.")
+    sys.stdout.flush()
     return mesh_cache, ref_cache, ipf_cache, gnd_cache, gnd_slide_cache
 
 

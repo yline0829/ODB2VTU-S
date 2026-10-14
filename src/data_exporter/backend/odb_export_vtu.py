@@ -513,7 +513,7 @@ def extract_gnd_difference_arrays(frame, inst, elem_labels, dat_db, mode, existi
     init_total = {}
     curr_total = {}
     delta_total = {}
-    dir_delta = [dict() for _ in range(9)]
+    dir_delta = [dict() for _ in range(9)] if mode in ("directions", "all") else []
     slip_delta = [dict() for _ in range(18)]
     coverage = {}
     missing = 0
@@ -552,12 +552,13 @@ def extract_gnd_difference_arrays(frame, inst, elem_labels, dat_db, mode, existi
             curr_total[lab] = [ct]
             delta_total[lab] = [ct - it]
 
-        for j, pair in enumerate(GND_DIR_SLIP_PAIRS):
-            a,b = pair[0]-1, pair[1]-1
-            if math.isfinite(cur[a]) and math.isfinite(cur[b]):
-                dir_delta[j][lab] = [cur[a] + cur[b] - float(rho_dir[j])]
-            else:
-                dir_delta[j][lab] = [float("nan")]
+        if dir_delta:
+            for j, pair in enumerate(GND_DIR_SLIP_PAIRS):
+                a,b = pair[0]-1, pair[1]-1
+                if math.isfinite(cur[a]) and math.isfinite(cur[b]):
+                    dir_delta[j][lab] = [cur[a] + cur[b] - float(rho_dir[j])]
+                else:
+                    dir_delta[j][lab] = [float("nan")]
 
         for slip in range(18):
             slip_delta[slip][lab] = [cur[slip] - ini[slip]] if math.isfinite(cur[slip]) else [float("nan")]

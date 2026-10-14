@@ -6,6 +6,7 @@ from xml.sax.saxutils import escape
 from odbAccess import openOdb
 
 from odb_export_vtu import parse_bbox, selected_elements, export_frame
+from odb_export_legacy import adopt_legacy_frames
 from odb_export_state import (
     atomic_replace, atomic_write_json, export_kwargs_from_spec,
     load_manifest, make_output_spec, merge_output_specs, new_manifest,
@@ -150,11 +151,8 @@ def main():
                 "Existing export manifest belongs to a different ODB/instance/region. "
                 "Choose a different output PVD or remove the old manifest intentionally."
             )
-        if manifest is None:
-            manifest = new_manifest(src_id)
-            if os.path.exists(pvd):
-                print("NOTE: legacy PVD detected without a v2 manifest.")
-                print("      Existing legacy VTU files are preserved but are not assumed reusable.")
+        # Defer legacy import until the ODB Step/Frame identities are available.
+        was_manifest_missing = (manifest is None)
 
         print("Opening ODB (read-only):", a.odb)
         odb = openOdb(a.odb, readOnly=True)
@@ -196,6 +194,19 @@ def main():
 
         requested_spec = current_output_spec(a, fields)
         rev = source_revision(a.odb)
+        manifest, adopted, reason = adopt_legacy_frames(
+            pvd, frame_dir, stem, src_id, rev, step_names,
+            lambda name: len(odb.steps[name].frames), manifest)
+        if adopted:
+            print("LEGACY MIGRATION: %s" % reason)
+            print("                  Existing legacy VTU filenames are preserved.")
+        elif was_manifest_missing and os.path.exists(pvd):
+            raise RuntimeError(
+                "Cannot safely reuse existing legacy PVD/VTU: %s. "
+                "Original files have NOT been modified. "
+                "Please verify the original signature/source or choose a separate output." % reason)
+        if manifest is None:
+            manifest = new_manifest(src_id)
         frames = manifest.setdefault("frames", {})
         selected_keys = set(state_key(s, f) for s, f in selected)
 
@@ -215,7 +226,11 @@ def main():
             old_spec = old.get("output_spec")
             final_spec = merge_output_specs(old_spec, requested_spec, a.field_policy)
 
-            vtu_name = stable_vtu_name(sname, fi)
+            # Preserve the original name for an already exported Step/Frame.
+            # Assign a stable v0.2 name only to a genuinely new state.
+            vtu_name = old.get("file") or stable_vtu_name(sname, fi)
+            if os.path.basename(vtu_name) != vtu_name:
+                raise RuntimeError("Unsafe frame filename in export manifest: %s" % vtu_name)
             vtu_path = os.path.join(frame_dir, vtu_name)
             old_revision = old.get("source_revision")
             same_revision = (old_revision == rev)
@@ -262,20 +277,6 @@ def main():
                 "source_revision": rev,
             }
 
-        # Optional physical cleanup of frames removed by sync.
-        if a.frame_policy == "sync" and bool(a.cleanup_removed_frames):
-            for key in list(frames.keys()):
-                ent = frames[key]
-                if ent.get("active", True):
-                    continue
-                fpath = os.path.join(frame_dir, ent.get("file", ""))
-                try:
-                    if fpath and os.path.exists(fpath):
-                        os.remove(fpath)
-                except Exception:
-                    pass
-                del frames[key]
-
         # Rebuild the active timeline once, atomically, after all selected VTUs succeed.
         active = []
         for key, ent in frames.items():
@@ -307,6 +308,25 @@ def main():
 
         write_pvd(pvd, datasets)
         atomic_write_json(manifest_path, manifest)
+
+        # Explicit cleanup is attempted only after publishing PVD/manifest.
+        # Failed exports can therefore never delete old referenced VTUs.
+        if a.frame_policy == "sync" and bool(a.cleanup_removed_frames):
+            for key in list(frames.keys()):
+                ent = frames[key]
+                if ent.get("active", True):
+                    continue
+                name = ent.get("file", "")
+                if not name or os.path.basename(name) != name:
+                    print("WARNING: refusing unsafe cleanup path: %s" % name)
+                    continue
+                fpath = os.path.join(frame_dir, name)
+                try:
+                    if os.path.exists(fpath):
+                        os.remove(fpath)
+                        print("REMOVED unused VTU: %s" % fpath)
+                except OSError as ex:
+                    print("WARNING: cleanup failed for %s: %s" % (fpath, ex))
 
         print("")
         print("SUCCESS")

@@ -14,6 +14,12 @@ All notable changes will be documented in this file.
 
 ## [0.2.0] - 2026-10-14
 
+### Bug fix — extra VTU inventory (2026-10-15)
+- Fixed an overly strict validation that aborted an otherwise valid 52-frame export when the output folder held 10 additional, unindexed VTU states without trusted export metadata.
+- Unindexed and unselected extra VTUs are now preserved on disk but excluded from the active PVD and current manifest.
+- Selected frames and PVD-indexed files still require trustworthy provenance; no automatic deletion or unsafe overwrite.
+- Added regression tests for both the non-blocking extra-VTU case and fail-safe rejection of a selected unverified VTU.
+
 ### Fixed (folder inventory and Windows progress)
 - Scan existing VTU filenames in the output frame folder before generating any new names.
 - Identify existing frames by original ODB Step name and Frame index, not by the six-digit export-list sequence.

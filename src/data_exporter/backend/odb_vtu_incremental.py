@@ -217,7 +217,15 @@ def merge_vtu(old_path, delta_path, output_path, keep_names):
                 else:
                     _copy_region(f, old, *op_arrays[name])
                 f.write(b"\n")
-            _copy_region(f, old, op[2], oc[1])
+            _copy_region(f, old, op[2], oc[0])
+            # Keep the active Scalars attribute consistent when IPF is
+            # introduced or removed via Field Merge/Sync.
+            cell_header = old[oc[0]:oc[1]]
+            cell_header = re.sub(br'\s+Scalars="[^"]*"', b"", cell_header)
+            if "Initial_IPF_RGB" in keep:
+                cell_header = cell_header.replace(
+                    b">", b' Scalars="Initial_IPF_RGB">', 1)
+            f.write(cell_header)
             for name in oc_order + [n for n in nc_order if n not in oc_arrays]:
                 if name not in keep:
                     continue

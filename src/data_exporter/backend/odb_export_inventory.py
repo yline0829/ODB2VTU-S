@@ -88,9 +88,11 @@ def scan_vtu_directory(frame_dir, stem, step_names, odb_frame_count, pvd_path,
             continue
         key = state_key(step, fi)
         current = existing_frames.get(key) or {}
-        priority = (0 if name == current.get("file") else
-                    1 if name in indexed else
-                    2 if rx_legacy.match(name) else 3)
+        # PVD is the currently published collection. Prefer its existing
+        # filename over a stale v0.2 manifest left by an aborted migration.
+        priority = (0 if name in indexed else
+                    1 if rx_legacy.match(name) else
+                    2 if name == current.get("file") else 3)
         candidates.setdefault(key, []).append((priority, name))
 
     result = {}

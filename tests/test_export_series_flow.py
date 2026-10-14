@@ -184,9 +184,9 @@ class SeriesFlowTest(unittest.TestCase):
             "--field-policy", "merge",
         ]
         out = io.StringIO()
-        with mock.patch.object(series, "openOdb", return_value=DummyODB()), \\
+        with mock.patch.object(series, "openOdb", return_value=DummyODB()), \
              mock.patch.object(series, "selected_elements",
-                               return_value=([Element()], {}, {})), \\
+                               return_value=([Element()], {}, {})), \
              mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(out):
             rc = series.main()
         self.assertEqual(rc, 99)

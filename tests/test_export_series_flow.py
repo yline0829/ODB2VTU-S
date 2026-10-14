@@ -175,7 +175,7 @@ class SeriesFlowTest(unittest.TestCase):
         # An explicitly selected extra with no verifiable provenance
         # must still be refused, and the published PVD must stay intact.
         with open(self.selection, "w") as f:
-            f.write("Normal_Load\\t2\\n")
+            f.write("Normal_Load" + chr(9) + "2" + chr(10))
         argv = [
             "odb_export_series.py",
             "--odb", self.odb_path, "--instance", "PART-1-1",

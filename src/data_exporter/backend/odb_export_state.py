@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
 
+import hashlib
 import json
 import os
 import re
@@ -136,7 +137,9 @@ def safe_step_name(step_name):
 
 
 def stable_vtu_name(step_name, frame_index):
-    return "%s__f%06d.vtu" % (safe_step_name(step_name), int(frame_index))
+    raw = str(step_name)
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
+    return "%s__%s__f%06d.vtu" % (safe_step_name(raw), digest, int(frame_index))
 
 
 def load_manifest(path):

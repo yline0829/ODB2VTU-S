@@ -2,6 +2,8 @@
 
 All notable changes will be documented in this file.
 
+## [0.2.0] - 2026-10-14
+
 ### Performance optimization (same v0.2.0 test version)
 - Changed-frame Field Merge now uses the existing VTU arrays and reads only newly requested SDV/derived families from the ODB, provided that source identity, ODB revision, mesh and field provenance are compatible.
 - Old VTU arrays are transferred into the new file by bounded-memory, memory-mapped streaming; unchanged arrays are not recomputed from the ODB.
@@ -12,7 +14,10 @@ All notable changes will be documented in this file.
 - The final VTU is still safely replaced as one file after successful generation; unchanged frames are skipped entirely.
 - If geometry or existing VTU data cannot be validated, the exporter falls back to the original safe full-frame export.
 
-## [0.2.0] - 2026-10-14
+### Documentation and packaging (2026-10-15)
+- Updated English and Chinese README to cover field-level incremental `INCREMENTAL` updates, full `FULL` exports, on-disk VTU identity, Frame/Field Merge and Sync, and the first-export performance caveat.
+- Documented the user-verified performance observation for adding SDVs to existing VTUs: ~242 s/frame reduced to ~45 s/frame (~5.4x throughput; ~81% time saving). This is not a measurement of initial full export.
+- GitHub Actions now builds a complete repository source ZIP alongside the Windows Exporter, Windows CPFEM Postprocessor, and Linux Tools release packages, suitable for user-managed GitHub uploads.
 
 ### Bug fix — extra VTU inventory (2026-10-15)
 - Fixed an overly strict validation that aborted an otherwise valid 52-frame export when the output folder held 10 additional, unindexed VTU states without trusted export metadata.

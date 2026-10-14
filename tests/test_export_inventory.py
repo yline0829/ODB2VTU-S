@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Disk-inventory regression tests. No Abaqus license or ODB required."""
 from __future__ import print_function
+import hashlib
 import os
 import sys
 import tempfile
@@ -74,7 +75,8 @@ class InventoryTest(unittest.TestCase):
 
     def test_existing_pvd_reference_wins_over_stale_manifest(self):
         older = "myodb_series_000001_Normal_Load_f000020.vtu"
-        newer = "Normal_Load__deadcafe__f000020.vtu"
+        digest = hashlib.sha1(b"Normal_Load").hexdigest()[:8]
+        newer = "Normal_Load__%s__f000020.vtu" % digest
         for name in (older, newer):
             write_vtu(os.path.join(self.folder, name))
         write_pvd(self.pvd, [older])

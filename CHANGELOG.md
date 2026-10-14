@@ -4,6 +4,14 @@ All notable changes will be documented in this file.
 
 ## [0.2.0] - 2026-10-14
 
+### Fixed (folder inventory and Windows progress)
+- Scan existing VTU filenames in the output frame folder before generating any new names.
+- Identify existing frames by original ODB Step name and Frame index, not by the six-digit export-list sequence.
+- Keep existing VTU names and allocate collision-free sequential numbers only for genuinely new frames.
+- Prefer already indexed PVD files over stale Manifest filename records; refuse ambiguous/unverified legacy datasets rather than silently overwriting them.
+- Add Windows CMD startup banner, running reminder, field-read/write progress, and explicit success/failure status to prevent mistaking long ODB processing for a frozen application.
+- Add mocked-ODB regression tests for incremental skip, added frames, field merge, duplicates and invalid files.
+
 ### Fixed (legacy compatibility)
 - **Legacy VTU adoption:** v0.1.x exports listed under the original PVD and backed by a matching export signature are recognized as existing Step/Frame states without copying or renaming the VTU files.
 - Existing frames preserve their legacy filenames during skip or field updates; stable v0.2 naming is used only for newly exported frames.

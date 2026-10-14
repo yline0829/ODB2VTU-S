@@ -700,20 +700,29 @@ def unpack_array_spec(spec):
 
 
 def write_array(f, name, ncomp, order, values, vtk_data_type="Float64"):
-    f.write('        <DataArray type="%s" Name="%s" NumberOfComponents="%d" format="ascii">\n' % (vtk_data_type, name, ncomp))
+    """Batch formatted values to avoid millions of small Python write calls."""
+    f.write('        <DataArray type="%s" Name="%s" NumberOfComponents="%d" format="ascii">\n' %
+            (vtk_data_type, name, ncomp))
+    default = [0] * ncomp if vtk_data_type == "UInt8" else [float("nan")] * ncomp
+    parts = []
+    batch = 8192
     for key in order:
-        default = [0]*ncomp if vtk_data_type == "UInt8" else [float("nan")]*ncomp
         arr = values.get(int(key), default)
         for x in arr:
             if vtk_data_type == "UInt8":
                 try:
                     xv = int(round(float(x)))
-                    xv = max(0,min(255,xv))
+                    xv = max(0, min(255, xv))
                 except Exception:
                     xv = 0
-                f.write(" %d" % xv)
+                parts.append(" %d" % xv)
             else:
-                f.write(" %.12g" % float(x))
+                parts.append(" %.12g" % float(x))
+            if len(parts) >= batch:
+                f.write("".join(parts))
+                parts = []
+    if parts:
+        f.write("".join(parts))
     f.write('\n        </DataArray>\n')
 
 
@@ -740,9 +749,15 @@ def write_vtu(path, elems, node_map, arrays, grain_ids=None):
 
         f.write('      <Points>\n')
         f.write('        <DataArray type="Float64" NumberOfComponents="3" format="ascii">\n')
+        point_lines = []
         for lab in used_nodes:
             x,y,z = node_map[lab].coordinates
-            f.write(" %.12g %.12g %.12g" % (x,y,z))
+            point_lines.append(" %.12g %.12g %.12g" % (x,y,z))
+            if len(point_lines) >= 2048:
+                f.write("".join(point_lines))
+                point_lines = []
+        if point_lines:
+            f.write("".join(point_lines))
         f.write('\n        </DataArray>\n')
         f.write('      </Points>\n')
 
@@ -841,17 +856,33 @@ def export_frame(odb, instance_name, step_name, frame_index, out_path,
         for name,spec in ipf_cache.items():
             arrays[name] = spec
 
+    # The two GND difference families require the same 18 SDV current states.
+    # Extract each missing SDV only once, even if it is not in output fields.
+    gnd_inputs = arrays
+    if gnd_diff or gnd_slide_diff:
+        gnd_inputs = dict(arrays)
+        missing = ["SDV%d" % n for n in range(11, 29)
+                   if "SDV%d" % n not in gnd_inputs]
+        if missing:
+            print("  Preparing %d shared GND source SDV(s) ..." % len(missing))
+            sys.stdout.flush()
+        for name in missing:
+            arr = extract_field(frame, name, inst, elem_labels, set())
+            if arr is None or arr[0] != "cell" or arr[1] != 1:
+                raise RuntimeError("GND requires scalar %s in the selected frame." % name)
+            gnd_inputs[name] = arr
+
     if gnd_diff:
         if gnd_cache is None:
             gnd_cache = load_gnd_dat(gnd_dat)
-        gd = extract_gnd_difference_arrays(frame, inst, elem_labels, gnd_cache, gnd_diff_mode, arrays)
+        gd = extract_gnd_difference_arrays(frame, inst, elem_labels, gnd_cache, gnd_diff_mode, gnd_inputs)
         for name,spec in gd.items():
             arrays[name] = spec
 
     if gnd_slide_diff:
         if gnd_slide_cache is None:
             gnd_slide_cache = build_gnd_slide_reference_cache(odb, inst, elem_labels, gnd_slide_ref)
-        gd_slide = extract_gnd_slide_difference_arrays(frame, inst, elem_labels, gnd_slide_cache, arrays)
+        gd_slide = extract_gnd_slide_difference_arrays(frame, inst, elem_labels, gnd_slide_cache, gnd_inputs)
         for name,spec in gd_slide.items():
             arrays[name] = spec
 

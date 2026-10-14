@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
 
-import os, sys, argparse, traceback
+import json, os, sys, argparse, traceback, time
 from xml.sax.saxutils import escape
 from odbAccess import openOdb
 
 from odb_export_vtu import parse_bbox, selected_elements, export_frame
+from odb_vtu_incremental import patch_spec, merge_vtu, vtu_arrays, expected_derived
 from odb_export_legacy import _read_legacy_signature, _signature_spec
 from odb_export_inventory import scan_vtu_directory, allocate_vtu_name, _pvd_filenames
 from odb_export_state import (
@@ -77,20 +78,42 @@ def current_output_spec(a, fields):
 
 
 def export_with_spec(odb, instance_name, step_name, frame_index, out_path,
-                     spec, element_set, bbox, mesh_cache):
+                     spec, element_set, bbox, mesh_cache, cache_bank=None):
+    """Reuse step-independent input/GND/IPF reference data across all frames."""
     k = export_kwargs_from_spec(spec)
-    return export_frame(
+    bank = cache_bank if cache_bank is not None else {}
+    if "by_family" not in bank:
+        bank["by_family"] = {}
+    families = bank["by_family"]
+    keys = {}
+    for family in ("delta", "initial_ipf", "gnd_diff", "gnd_slide_diff"):
+        val = spec.get(family)
+        keys[family] = None if val is None else (
+            family + ":" + json.dumps(val, sort_keys=True))
+    def get_cache(family):
+        key = keys[family]
+        return None if key is None else families.get(key)
+
+    result = export_frame(
         odb, instance_name, step_name, frame_index, out_path, k["fields"],
         element_set, bbox, k["delta_field"], k["ref_step"], k["ref_frame"],
-        mesh_cache=mesh_cache, ref_cache=None,
+        mesh_cache=mesh_cache, ref_cache=get_cache("delta"),
         derived_mises=k["derived_mises"],
         initial_ipf=k["initial_ipf"],
-        inp_path=k["inp_path"], ipf_dir=k["ipf_dir"], ipf_cache=None,
+        inp_path=k["inp_path"], ipf_dir=k["ipf_dir"],
+        ipf_cache=get_cache("initial_ipf"),
         gnd_diff=k["gnd_diff"], gnd_dat=k["gnd_dat"],
-        gnd_diff_mode=k["gnd_diff_mode"], gnd_cache=None,
+        gnd_diff_mode=k["gnd_diff_mode"], gnd_cache=get_cache("gnd_diff"),
         gnd_slide_diff=k["gnd_slide_diff"],
-        gnd_slide_ref=k["gnd_slide_ref"], gnd_slide_cache=None
-    )[0]
+        gnd_slide_ref=k["gnd_slide_ref"],
+        gnd_slide_cache=get_cache("gnd_slide_diff")
+    )
+    for family, value in zip(
+            ("delta", "initial_ipf", "gnd_diff", "gnd_slide_diff"),
+            result[1:]):
+        if keys[family] is not None and value is not None:
+            families[keys[family]] = value
+    return result[0]
 
 
 def main():
@@ -293,6 +316,8 @@ def main():
 
         changed = 0
         skipped = 0
+        incremental = 0
+        cache_bank = {}
 
         for seq, (sname, fi) in enumerate(selected, 1):
             key = state_key(sname, fi)
@@ -323,29 +348,70 @@ def main():
                       (seq, len(selected), sname, fi))
                 skipped += 1
             else:
-                reason = []
-                if not os.path.exists(vtu_path):
-                    reason.append("new frame")
-                if old_spec is not None and not output_spec_equal(old_spec, final_spec):
-                    reason.append("field set/config changed")
-                if old_revision is not None and not same_revision:
-                    reason.append("ODB revision changed")
-                print("[%d/%d] exporting %s / frame %d%s" %
-                      (seq, len(selected), sname, fi,
-                       (" ; " + ", ".join(reason)) if reason else ""))
-
+                t_start = time.time()
+                valid_old = (old_spec is not None and same_revision and
+                             os.path.isfile(vtu_path) and
+                             os.path.getsize(vtu_path) > 0)
                 tmp_vtu = vtu_path + ".tmp"
-                if os.path.exists(tmp_vtu):
-                    os.remove(tmp_vtu)
-                sys.stdout.flush()
-                mesh_cache = export_with_spec(
-                    odb, a.instance, sname, fi, tmp_vtu, final_spec,
-                    a.element_set, bbox, mesh_cache
-                )
+                patch_vtu = vtu_path + ".fields.tmp"
+                for leftover in (tmp_vtu, patch_vtu):
+                    if os.path.exists(leftover):
+                        os.remove(leftover)
+
+                patched = False
+                if valid_old:
+                    try:
+                        point_names, cell_names = vtu_arrays(vtu_path)
+                        present = point_names | cell_names
+                        delta_spec, keep, need_delta = patch_spec(
+                            old_spec, final_spec, present)
+                        # Existing fields are copied from the existing VTU;
+                        # only missing/altered fields are extracted from ODB.
+                        # ODB/geometry changes bypass this fast path entirely.
+                        print("[%d/%d] INCREMENTAL %s / frame %d: %d existing array(s), "
+                              "%d new native field(s), derived updates=%s" % (
+                                  seq, len(selected), sname, fi, len(present),
+                                  len(delta_spec["native_fields"]),
+                                  ",".join(k for k in (
+                                      "mises", "initial_ipf", "gnd_diff",
+                                      "gnd_slide_diff", "delta")
+                                      if delta_spec.get(k)) or "none"))
+                        sys.stdout.flush()
+                        if need_delta:
+                            mesh_cache = export_with_spec(
+                                odb, a.instance, sname, fi, patch_vtu,
+                                delta_spec, a.element_set, bbox, mesh_cache,
+                                cache_bank)
+                        merge_vtu(vtu_path,
+                                  patch_vtu if need_delta else None,
+                                  tmp_vtu, keep)
+                        patched = True
+                    except (RuntimeError, ValueError, IOError, OSError) as ex:
+                        print("WARNING: incremental reuse unavailable: %s" % ex)
+                        print("         Switching to safe full-frame rebuild.")
+                        for leftover in (tmp_vtu, patch_vtu):
+                            if os.path.isfile(leftover):
+                                os.remove(leftover)
+
+                if not patched:
+                    print("[%d/%d] FULL EXPORT %s / frame %d" %
+                          (seq, len(selected), sname, fi))
+                    sys.stdout.flush()
+                    mesh_cache = export_with_spec(
+                        odb, a.instance, sname, fi, tmp_vtu, final_spec,
+                        a.element_set, bbox, mesh_cache, cache_bank)
+                # Merge and export both publish only complete replacement files.
                 atomic_replace(tmp_vtu, vtu_path)
-                print("[%d/%d] completed: %s" % (seq, len(selected), vtu_name))
-                sys.stdout.flush()
+                if os.path.isfile(patch_vtu):
+                    os.remove(patch_vtu)
                 changed += 1
+                if patched:
+                    incremental += 1
+                print("[%d/%d] completed: %s ; mode=%s ; seconds=%.2f" % (
+                    seq, len(selected), vtu_name,
+                    "INCREMENTAL" if patched else "FULL",
+                    time.time() - t_start))
+                sys.stdout.flush()
 
             frame = odb.steps[sname].frames[fi]
             frames[key] = {
@@ -416,6 +482,7 @@ def main():
         print("Manifest:", manifest_path)
         print("Active states:", len(datasets))
         print("Changed/rebuilt states:", changed)
+        print("Field-level incremental states:", incremental)
         print("Unchanged/skipped states:", skipped)
         print("Open only the .pvd file in ParaView.")
         return 0

@@ -6,7 +6,8 @@ from xml.sax.saxutils import escape
 from odbAccess import openOdb
 
 from odb_export_vtu import parse_bbox, selected_elements, export_frame
-from odb_export_legacy import adopt_legacy_frames
+from odb_export_legacy import _read_legacy_signature, _signature_spec
+from odb_export_inventory import scan_vtu_directory, allocate_vtu_name, _pvd_filenames
 from odb_export_state import (
     atomic_replace, atomic_write_json, export_kwargs_from_spec,
     load_manifest, make_output_spec, merge_output_specs, new_manifest,
@@ -151,12 +152,12 @@ def main():
                 "Existing export manifest belongs to a different ODB/instance/region. "
                 "Choose a different output PVD or remove the old manifest intentionally."
             )
-        # Defer legacy import until the ODB Step/Frame identities are available.
-        was_manifest_missing = (manifest is None)
 
         print("Opening ODB (read-only):", a.odb)
+        sys.stdout.flush()
         odb = openOdb(a.odb, readOnly=True)
         print("ODB opened.")
+        sys.stdout.flush()
 
         step_names = list(odb.steps.keys())
         step_index = dict((name, i) for i, name in enumerate(step_names))
@@ -194,20 +195,94 @@ def main():
 
         requested_spec = current_output_spec(a, fields)
         rev = source_revision(a.odb)
-        manifest, adopted, reason = adopt_legacy_frames(
-            pvd, frame_dir, stem, src_id, rev, step_names,
-            lambda name: len(odb.steps[name].frames), manifest)
-        if adopted:
-            print("LEGACY MIGRATION: %s" % reason)
-            print("                  Existing legacy VTU filenames are preserved.")
-        elif was_manifest_missing and os.path.exists(pvd):
-            raise RuntimeError(
-                "Cannot safely reuse existing legacy PVD/VTU: %s. "
-                "Original files have NOT been modified. "
-                "Please verify the original signature/source or choose a separate output." % reason)
         if manifest is None:
             manifest = new_manifest(src_id)
         frames = manifest.setdefault("frames", {})
+
+        print("Scanning existing VTU directory before assigning filenames ...")
+        found, names_on_disk, next_serial, inventory_issues = scan_vtu_directory(
+            frame_dir, stem, step_names,
+            lambda name: len(odb.steps[name].frames), pvd, frames)
+        for issue in inventory_issues:
+            print("VTU INVENTORY WARNING:", issue)
+        print("VTU files found: %d ; matched ODB frames: %d ; highest serial: %d" %
+              (len(names_on_disk), len(found), next_serial))
+
+        # The legacy signature is only valid for the same output collection
+        # and element scope; it cannot prove an arbitrary renamed ODB matches.
+        legacy_sig_path = os.path.join(frame_dir, "_ADE_export_signature.txt")
+        legacy_sig = _read_legacy_signature(legacy_sig_path)
+        legacy_spec = None
+        legacy_stamp = None
+        original_odb_stem = os.path.splitext(os.path.basename(a.odb))[0]
+        matching_output_stem = (stem == original_odb_stem or
+                                stem.startswith(original_odb_stem + "_"))
+        if legacy_sig is not None and matching_output_stem:
+            if (legacy_sig.get("element_set") == str(a.element_set) and
+                    legacy_sig.get("bbox") == str(a.bbox)):
+                legacy_spec = _signature_spec(legacy_sig)
+                legacy_stamp = os.path.getmtime(legacy_sig_path)
+
+        adopted = 0
+        unverified = []
+        indexed_files = _pvd_filenames(pvd)
+        for key, filename in found.items():
+            old = frames.get(key)
+            if old is not None and old.get("file") == filename:
+                continue
+
+            # A manifest created by an earlier v0.2 build may point to a
+            # missing file. Recover by scanning, not by inventing a new name.
+            if old is not None and old.get("output_spec") is not None:
+                old["file"] = filename
+                old["active"] = True
+                print("RECOVERED MANIFEST FILE: %s -> %s" % (key, filename))
+                continue
+
+            path = os.path.join(frame_dir, filename)
+            # A legacy signature may have been updated by a failed export.
+            # It is safe to assign its field configuration only to files
+            # written no earlier than that signature and the source ODB.
+            trustworthy_legacy = (
+                legacy_spec is not None and legacy_stamp is not None and
+                os.path.getmtime(path) + 2.0 >= legacy_stamp and
+                rev.get("mtime") is not None and
+                os.path.getmtime(path) + 2.0 >= float(rev["mtime"])
+            )
+            step_name, frame_num = key.rsplit("\t", 1)
+            frames[key] = {
+                "step": step_name, "frame": int(frame_num),
+                "file": filename, "active": True,
+                "output_spec": legacy_spec if trustworthy_legacy else None,
+                "source_revision": rev if trustworthy_legacy else None,
+                "inventory_discovered": True
+            }
+            if trustworthy_legacy:
+                adopted += 1
+            else:
+                unverified.append(key)
+
+        # Never silently remove unknown files from an existing PVD timeline.
+        unrecognized_refs = indexed_files - set(found.values())
+        if unrecognized_refs:
+            raise RuntimeError(
+                "Existing PVD references %d unrecognized/incomplete VTU files. "
+                "The old PVD and VTU files were not changed. "
+                "Examples: %s" %
+                (len(unrecognized_refs), ", ".join(sorted(unrecognized_refs)[:5])))
+        if unverified:
+            raise RuntimeError(
+                "%d existing VTU states lack trustworthy export metadata; "
+                "refusing to overwrite or silently skip them. "
+                "Original VTU/PVD remain untouched. Examples: %s. "
+                "Use the matching original _ADE_export_signature.txt, "
+                "or choose a fresh output dataset." %
+                (len(unverified), ", ".join(unverified[:5])))
+
+        if adopted:
+            print("VTU INVENTORY: adopted %d legacy states; existing filenames kept." %
+                  adopted)
+        print("VTU INVENTORY: %d states ready for incremental export." % len(frames))
         selected_keys = set(state_key(s, f) for s, f in selected)
 
         # Frame-level semantics:
@@ -226,9 +301,13 @@ def main():
             old_spec = old.get("output_spec")
             final_spec = merge_output_specs(old_spec, requested_spec, a.field_policy)
 
-            # Preserve the original name for an already exported Step/Frame.
-            # Assign a stable v0.2 name only to a genuinely new state.
-            vtu_name = old.get("file") or stable_vtu_name(sname, fi)
+            # Always use the scanned on-disk name for an existing state.
+            # Only genuinely new states receive an unoccupied serial.
+            vtu_name = old.get("file") or found.get(key)
+            if not vtu_name:
+                vtu_name, next_serial = allocate_vtu_name(
+                    stem, sname, fi, names_on_disk, next_serial)
+                print("NEW VTU NAME:", vtu_name)
             if os.path.basename(vtu_name) != vtu_name:
                 raise RuntimeError("Unsafe frame filename in export manifest: %s" % vtu_name)
             vtu_path = os.path.join(frame_dir, vtu_name)
@@ -259,11 +338,14 @@ def main():
                 tmp_vtu = vtu_path + ".tmp"
                 if os.path.exists(tmp_vtu):
                     os.remove(tmp_vtu)
+                sys.stdout.flush()
                 mesh_cache = export_with_spec(
                     odb, a.instance, sname, fi, tmp_vtu, final_spec,
                     a.element_set, bbox, mesh_cache
                 )
                 atomic_replace(tmp_vtu, vtu_path)
+                print("[%d/%d] completed: %s" % (seq, len(selected), vtu_name))
+                sys.stdout.flush()
                 changed += 1
 
             frame = odb.steps[sname].frames[fi]

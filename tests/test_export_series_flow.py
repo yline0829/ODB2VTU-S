@@ -46,12 +46,27 @@ class Element(object):
     connectivity = [1]
 
 
-def complete_vtu(path):
-    with open(path, "wb") as f:
-        f.write(b'<VTKFile type="UnstructuredGrid">\n')
-        f.write(b'<UnstructuredGrid><Piece NumberOfCells="1">\n')
-        f.write(b'X' * 128)
-        f.write(b'</Piece></UnstructuredGrid></VTKFile>\n')
+def complete_vtu(path, fields=None):
+    """Emit a real, tiny ASCII VTK XML dataset for merge-integrity checks."""
+    fields = ["SDV11"] if fields is None else fields
+    with open(path, "w") as f:
+        f.write('<?xml version="1.0"?>\n')
+        f.write('<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">\n')
+        f.write('<UnstructuredGrid>\n')
+        f.write('<Piece NumberOfPoints="1" NumberOfCells="1">\n')
+        f.write('<Points><DataArray type="Float64" NumberOfComponents="3" format="ascii">')
+        f.write(' 0 0 0</DataArray></Points>\n')
+        f.write('<Cells>\n')
+        f.write('<DataArray type="Int64" Name="connectivity" format="ascii"> 0</DataArray>')
+        f.write('<DataArray type="Int64" Name="offsets" format="ascii"> 1</DataArray>')
+        f.write('<DataArray type="UInt8" Name="types" format="ascii"> 1</DataArray>\n')
+        f.write('</Cells>\n')
+        f.write('<PointData>\n</PointData>\n')
+        f.write('<CellData>\n')
+        for name in fields:
+            f.write('<DataArray type="Float64" Name="%s" NumberOfComponents="1" format="ascii"> %d</DataArray>\n'
+                    % (name, int(name.replace("SDV", ""))))
+        f.write('</CellData></Piece></UnstructuredGrid></VTKFile>\n')
 
 
 class SeriesFlowTest(unittest.TestCase):
@@ -102,9 +117,9 @@ class SeriesFlowTest(unittest.TestCase):
             "--field-policy", field_policy,
         ]
         def fake_export(odb, instance_name, step_name, frame_index,
-                        out_path, spec, element_set, bbox, mesh_cache):
+                        out_path, spec, element_set, bbox, mesh_cache, cache_bank=None):
             self.calls.append((step_name, frame_index, tuple(spec["native_fields"])))
-            complete_vtu(out_path)
+            complete_vtu(out_path, spec["native_fields"])
             return mesh_cache
         out = io.StringIO()
         with mock.patch.object(series, "openOdb", return_value=DummyODB()), \
@@ -133,13 +148,34 @@ class SeriesFlowTest(unittest.TestCase):
         self.assertEqual(names[2], "fake_series_000003_Normal_Load_f000002.vtu")
         self.assertIn("Unchanged/skipped states: 2", second)
 
-    def test_new_field_rebuilds_same_existing_filename(self):
+    def test_new_field_reuses_old_native_field(self):
         self.run_series([0, 1])
         self.calls[:] = []
         log = self.run_series([0], "SDV29")
-        self.assertEqual(self.calls, [("Normal_Load", 0, ("SDV11", "SDV29"))])
+        self.assertEqual(self.calls, [("Normal_Load", 0, ("SDV29",))])
         self.assertEqual(self.pvd_names(), [self.legacy0, self.legacy1])
         self.assertIn("Changed/rebuilt states: 1", log)
+        self.assertIn("Field-level incremental states: 1", log)
+        fields = {
+            node.get("Name"): node.text.strip()
+            for node in ET.parse(os.path.join(self.folder, self.legacy0)).getroot().iter("DataArray")
+            if node.get("Name") and node.get("Name").startswith("SDV")
+        }
+        self.assertEqual(fields, {"SDV11": "11", "SDV29": "29"})
+
+    def test_field_sync_removes_only_unselected_fields(self):
+        self.run_series([0, 1])
+        self.run_series([0], "SDV29")
+        self.calls[:] = []
+        log = self.run_series([0], "SDV29", field_policy="sync")
+        self.assertEqual(self.calls, [])  # deletion-only does not read ODB fields
+        fields = {
+            node.get("Name"): node.text.strip()
+            for node in ET.parse(os.path.join(self.folder, self.legacy0)).getroot().iter("DataArray")
+            if node.get("Name") and node.get("Name").startswith("SDV")
+        }
+        self.assertEqual(fields, {"SDV29": "29"})
+        self.assertIn("Field-level incremental states: 1", log)
 
 
 if __name__ == "__main__":

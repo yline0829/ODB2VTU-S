@@ -25,7 +25,7 @@ Current release packages use the **ODB2VTU-S** naming scheme:
 - **Windows — ODB2VTU-S CPFEM Postprocessor**
 - **Linux — Combined Tools**
 
-The repository itself is the maintainable source tree; packaged ZIP files are distributed through **Releases**.
+The repository itself is the maintainable source tree. The latest development ZIPs can be obtained from a successful **GitHub Actions → Build packages** run; tagged release assets are distributed via **Releases**.
 
 ## Overview
 
@@ -86,6 +86,24 @@ ODB2VTU-S v0.2 uses a two-level export policy:
 The safe default is therefore **Merge + Merge**: repeated export does not silently delete old frames or fields.
 
 See [Incremental export logic](docs/incremental-export.md) for the complete state-management rules.
+
+### Performance-optimized field updates (v0.2.0)
+
+The current **v0.2.0 source** includes a real **field-level incremental export** path, in addition to frame-level skipping:
+
+- `unchanged`: the selected Step/Frame has the same recorded source revision and output configuration; **no VTU rewrite**.
+- `INCREMENTAL`: reuse unchanged field arrays from the existing ASCII VTU (bounded-memory streaming), read only new native SDVs or changed derived-field groups from the ODB, and safely replace the complete VTU.
+- `FULL`: a brand-new frame or a frame whose existing data cannot be safely reused is exported in full. It still benefits from per-run GND/IPF/reference caching, shared GND SDV reads and batched ASCII writing.
+
+Existing names are discovered from the output folder and matched by **ODB Step name + zero-based Frame index**; existing names remain unchanged. The leading six-digit serial in a legacy filename is an *export-file number*, not the ODB frame index. New frames receive an unused serial.
+
+For **subsequent SDV additions**, use **Frame Merge + Field Merge**, select the target frames and **only the new SDVs**. Previously exported native fields, Initial IPF and GND differences remain in the VTU even if they are **not selected again**. If a derived-field family is explicitly requested with changed parameters, that family is recomputed. **Field Sync** instead removes previously exported fields/derived families that are not currently selected. **Frame Sync** narrows the active PVD timeline to only the selected frames, independent of the field policy.
+
+**Measured incremental case (user validation, 2026-10-15):** approximately **242 s/frame before optimization** versus **45 s/frame after optimization** for a previously exported friction/CPFEM model while adding SDVs (about **5.4× faster**, **81% less elapsed time**). Output fields were checked by the user. These are workload-specific, **not a benchmark for the first-time `FULL` export**, whose performance has not been measured here.
+
+The exporter still writes complete VTU files safely; it does **not** modify the interior of an existing VTU in place. Large new exports remain dependent on ODB data volume, field counts and disk performance. Do not run two exporters against the same PVD concurrently. Back up existing VTU/PVD/manifest outputs before testing a new build.
+
+See [incremental export implementation and limitations](docs/incremental-export.md).
 
 ## Screenshots
 
@@ -213,7 +231,7 @@ Generated ZIP files are written to `dist/` and are intentionally ignored by Git.
 
 ## Development status
 
-The current release is **v0.1.2**, adding dedicated application icons and improved Linux usability on smaller displays. The project grew from an internal research post-processing workflow and is being generalized incrementally. Please report model/version compatibility issues through GitHub Issues.
+The current development source is **v0.2.0** (frame/field Merge/Sync, on-disk VTU inventory, field-level incremental updates and reference-data caching). GitHub Release assets may lag behind the development source; verify the asset version before downloading. The legacy **v0.1.2** release added desktop icons and Linux usability improvements. Please report model/version compatibility issues through GitHub Issues.
 
 ## License
 

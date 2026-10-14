@@ -3,6 +3,12 @@ from __future__ import print_function
 import os, sys, argparse, traceback, math, re
 from collections import defaultdict
 from odbAccess import openOdb
+from odb_export_state import (
+    atomic_replace, atomic_write_json, export_kwargs_from_spec,
+    load_manifest, make_output_spec, merge_output_specs, new_manifest,
+    output_spec_equal, same_source_identity, source_identity, source_revision,
+    state_key
+)
 
 VTK_CELL_TYPES = {
     4: 10,   # tetra
@@ -892,6 +898,7 @@ def main():
     p.add_argument("--gnd-diff-mode", default="slips", choices=["slips"])
     p.add_argument("--gnd-slide-diff", type=int, default=0)
     p.add_argument("--gnd-slide-ref", default="sliding0", choices=["sliding0","previous_last"])
+    p.add_argument("--field-policy", default="merge", choices=["merge","sync"])
     a = p.parse_args()
 
     odb = None
@@ -902,17 +909,81 @@ def main():
             raise RuntimeError("Initial IPF requires a valid INP file.")
         if a.gnd_diff and (not a.gnd_dat or not os.path.exists(a.gnd_dat)):
             raise RuntimeError("GND difference requires a valid gnd_field.dat file.")
-        odb = openOdb(a.odb, readOnly=True)
-        export_frame(
-            odb, a.instance, a.step, a.frame, a.out, fields,
-            a.element_set, bbox, a.delta_field, a.ref_step, a.ref_frame,
-            derived_mises=bool(a.mises), initial_ipf=bool(a.initial_ipf),
-            inp_path=a.inp, ipf_dir=a.ipf_dir,
-            gnd_diff=bool(a.gnd_diff), gnd_dat=a.gnd_dat, gnd_diff_mode=a.gnd_diff_mode,
-            gnd_slide_diff=bool(a.gnd_slide_diff), gnd_slide_ref=a.gnd_slide_ref
+        out_path = os.path.abspath(a.out)
+        manifest_path = out_path + ".odb2vtus.json"
+        src_id = source_identity(a.odb, a.instance, a.element_set, a.bbox)
+        manifest = load_manifest(manifest_path)
+        if manifest is not None and not same_source_identity(manifest, src_id):
+            raise RuntimeError(
+                "Existing single-frame manifest belongs to a different ODB/instance/region. "
+                "Choose another output VTU or remove the old sidecar intentionally."
+            )
+        if manifest is None:
+            manifest = new_manifest(src_id)
+            if os.path.exists(out_path):
+                print("NOTE: legacy VTU detected without a v2 manifest; current request will rebuild it.")
+
+        requested_spec = make_output_spec(
+            fields,
+            mises=bool(a.mises),
+            initial_ipf=bool(a.initial_ipf),
+            inp_path=a.inp,
+            ipf_dir=a.ipf_dir,
+            gnd_diff=bool(a.gnd_diff),
+            gnd_dat=a.gnd_dat,
+            gnd_diff_mode=a.gnd_diff_mode,
+            gnd_slide_diff=bool(a.gnd_slide_diff),
+            gnd_slide_ref=a.gnd_slide_ref,
+            delta_field=a.delta_field,
+            ref_step=a.ref_step,
+            ref_frame=a.ref_frame
         )
+
+        key = state_key(a.step, a.frame)
+        old = manifest.setdefault("frames", {}).get(key) or {}
+        final_spec = merge_output_specs(old.get("output_spec"), requested_spec, a.field_policy)
+        rev = source_revision(a.odb)
+        reusable = (
+            os.path.exists(out_path) and os.path.getsize(out_path) > 0 and
+            old.get("output_spec") is not None and
+            output_spec_equal(old.get("output_spec"), final_spec) and
+            old.get("source_revision") == rev
+        )
+
+        odb = openOdb(a.odb, readOnly=True)
+        if reusable:
+            print("UNCHANGED: same frame and output fields already exist; skipping rebuild.")
+        else:
+            k = export_kwargs_from_spec(final_spec)
+            tmp_out = out_path + ".tmp"
+            if os.path.exists(tmp_out):
+                os.remove(tmp_out)
+            export_frame(
+                odb, a.instance, a.step, a.frame, tmp_out, k["fields"],
+                a.element_set, bbox, k["delta_field"], k["ref_step"], k["ref_frame"],
+                derived_mises=k["derived_mises"], initial_ipf=k["initial_ipf"],
+                inp_path=k["inp_path"], ipf_dir=k["ipf_dir"],
+                gnd_diff=k["gnd_diff"], gnd_dat=k["gnd_dat"], gnd_diff_mode=k["gnd_diff_mode"],
+                gnd_slide_diff=k["gnd_slide_diff"], gnd_slide_ref=k["gnd_slide_ref"]
+            )
+            atomic_replace(tmp_out, out_path)
+
+        manifest["frames"] = {
+            key: {
+                "step": a.step,
+                "frame": int(a.frame),
+                "file": os.path.basename(out_path),
+                "active": True,
+                "output_spec": final_spec,
+                "source_revision": rev,
+            }
+        }
+        atomic_write_json(manifest_path, manifest)
+
         print("SUCCESS")
-        print("Output:", a.out)
+        print("Output:", out_path)
+        print("Manifest:", manifest_path)
+        print("Field policy:", a.field_policy)
         return 0
     except Exception:
         print("FATAL EXCEPTION:")

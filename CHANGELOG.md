@@ -4,6 +4,13 @@ All notable changes will be documented in this file.
 
 ## [0.2.0] - 2026-10-14
 
+### Fixed (legacy compatibility)
+- **Legacy VTU adoption:** v0.1.x exports listed under the original PVD and backed by a matching export signature are recognized as existing Step/Frame states without copying or renaming the VTU files.
+- Existing frames preserve their legacy filenames during skip or field updates; stable v0.2 naming is used only for newly exported frames.
+- Invalid/unverified legacy files do not silently overwrite an existing PVD.
+- VTU and manifest replacements now use `os.replace` to avoid unlink-before-rename loss.
+- Physical cleanup of removed frames runs only after a successful PVD/manifest update.
+
 ### Added
 - Two-level incremental export model for **frames** and **fields**.
 - Frame policy:

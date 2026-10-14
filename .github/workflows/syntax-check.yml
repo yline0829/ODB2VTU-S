@@ -24,6 +24,8 @@ jobs:
           else:
               print('src/ not uploaded yet; documentation-only commit')
           PY
+      - name: Run VTU inventory regression tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Check shell syntax
         run: |
           if [ -d src ] || [ -d packaging ]; then

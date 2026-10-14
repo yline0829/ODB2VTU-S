@@ -96,6 +96,20 @@ A Step/Frame state always maps to a stable name containing:
 
 Therefore adding a frame before an existing state does not rename or duplicate every later VTU.
 
+## Performance path for existing frames (v0.2.0 optimized build)
+
+An unchanged Step/Frame is still skipped immediately.
+
+When only some fields are new, the exporter reads the old VTU field headers, validates the stored ODB provenance and verifies that the source geometry is identical. It then:
+1. extracts only newly requested fields or changed derived groups from ODB,
+2. streams unchanged DataArray payloads directly from the previous VTU,
+3. merges old and new arrays into a temporary complete VTU,
+4. atomically replaces the old VTU only after the merge succeeds.
+
+No full XML document or all existing array values are loaded into RAM. The mesh and VTU file format stay unchanged. An unsupported/invalid VTU is instead safely regenerated in full.
+
+DAT GND, initial IPF and fixed sliding reference data are now cached across frames for a single export run. The same 18 SDV11–28 fields are shared when DAT and sliding GND differences are both requested.
+
 ## 6. Atomic updates
 
 - A changed VTU is first written to `*.tmp`.

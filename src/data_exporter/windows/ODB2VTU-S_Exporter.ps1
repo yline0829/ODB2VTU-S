@@ -22,7 +22,7 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ODB2VTU-S Exporter"
+        Title="ODB2VTU-S Workbench"
         Width="1360" Height="850"
         MinWidth="1080" MinHeight="700"
         WindowStartupLocation="CenterScreen"
@@ -70,11 +70,15 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
                 <Separator/>
                 <MenuItem x:Name="miExit" Header="Exit"/>
             </MenuItem>
-            <MenuItem x:Name="menuEdit" Header="_Edit"/>
-            <MenuItem x:Name="menuView" Header="_View"/>
-            <MenuItem x:Name="menuTools" Header="_Tools">
+            <MenuItem x:Name="menuEdit" Header="_Edit">
                 <MenuItem x:Name="miCurveData" Header="Curve Data..."/>
                 <MenuItem x:Name="miFieldAnalysis" Header="Field Extremum Analysis..."/>
+                <Separator/>
+                <MenuItem x:Name="miCPFEM" Header="Friction CPFEM (History / PEEQCP)..."/>
+            </MenuItem>
+            <MenuItem x:Name="menuView" Header="_View"/>
+            <MenuItem x:Name="menuTools" Header="_Tools">
+                <MenuItem x:Name="miDataSafety" Header="Data Diagnosis and Safe Recovery..."/>
             </MenuItem>
             <MenuItem x:Name="menuHelp" Header="_Help"/>
         </Menu>
@@ -502,6 +506,18 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
                                     <ComboBoxItem Content="同步当前变量 / Sync" Tag="sync"/>
                                 </ComboBox>
                             </WrapPanel>
+                            <WrapPanel Margin="0,7,0,0">
+                                <TextBlock x:Name="lblCompatMode" Text="旧版数据兼容模式" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox x:Name="cmbCompatMode" Width="325" SelectedIndex="1">
+                                    <ComboBoxItem Tag="standard" Content="标准增量（已有 Manifest）"/>
+                                    <ComboBoxItem Tag="fast" Content="快速兼容（推荐，无 Manifest 自动迁移）"/>
+                                    <ComboBoxItem Tag="strict" Content="严格验证（逐帧核对数值）"/>
+                                </ComboBox>
+                            </WrapPanel>
+                            <CheckBox x:Name="chkInPlace" Content="原位增量更新（不新建复制目录，保留原 VTU 文件名）"
+                                      IsChecked="False" Margin="0,5,0,0"/>
+                            <TextBlock x:Name="txtCompatHint" Text="勾选原位更新后使用同目录临时文件和回滚硬链接，成功后替换原 VTU。"
+                                       Foreground="#555" TextWrapping="Wrap" Margin="0,4,0,0"/>
                             <CheckBox x:Name="chkCleanupRemoved"
                                       Content="同步帧时同时删除已移除帧的 VTU / Delete removed-frame VTU files"
                                       IsChecked="False" Margin="0,5,0,0"/>
@@ -592,7 +608,7 @@ $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
 
 $names = @(
-"menuFile","miOpen","miExit","menuEdit","menuView","menuTools","miCurveData","miFieldAnalysis","menuHelp",
+"menuFile","miOpen","miExit","menuEdit","menuView","menuTools","miCurveData","miFieldAnalysis","miCPFEM","miDataSafety","menuHelp",
 "tbOpen","tbRead","tbFields","tbExport","tbOpenFolder","lblLanguage","cmbLanguage",
 "hdrProperties","btnApply","btnReset",
 "grpSource","lblOdbFile","txtOdb","btnBrowse","btnRead",
@@ -605,7 +621,7 @@ $names = @(
 "grpGND","chkGNDDiff","lblGNDDat","txtGNDDat","btnBrowseGNDDat","lblGNDMode","cmbGNDMode","chkGNDSlideDiff","lblGNDSlideRef","cmbGNDSlideRef","txtGNDHint",
 "grpDifference","chkDelta","lblDiffField","cmbDeltaField","lblRefStep","cmbRefStep","lblRefFrame","cmbRefFrame",
 "lblBBox","txtBBox","chkAutoOutput","btnChooseOutputFolder","lblOutputFile","txtOutput","btnBrowseOutput",
-"cmbFramePolicy","cmbFieldPolicy","chkCleanupRemoved",
+"cmbFramePolicy","cmbFieldPolicy","cmbCompatMode","lblCompatMode","txtCompatHint","chkInPlace","chkCleanupRemoved",
 "hdrSummary","txtSummary","hdrMessages","btnClearMessages","txtMessages",
 "txtStatus","txtStatusRight"
 )
@@ -614,7 +630,7 @@ foreach($n in $names){
 }
 
 $global:meta = $null
-$script:lang = "en"
+$script:lang = "zh"
 $script:fieldBoxes = New-Object System.Collections.Generic.List[object]
 
 # Each entry: PSCustomObject {Step, Frame, Display}
@@ -622,7 +638,7 @@ $script:selectedStates = New-Object System.Collections.ArrayList
 
 $T = @{
 en = @{
-Window="ODB2VTU-S Exporter"; File="_File"; Open="Open ODB..."; Exit="Exit"; Edit="_Edit"; View="_View"; Tools="_Tools"; Help="_Help";
+Window="ODB2VTU-S Workbench"; File="_File"; Open="Open ODB..."; Exit="Exit"; Edit="_Edit"; View="_View"; Tools="_Tools"; Help="_Help";
 OpenODB="Open ODB"; ReadMeta="Read Metadata"; ReadFields="Read Fields"; Export="Export Data"; OpenFolder="Open Output Folder"; Language="Language";
 Properties="Properties"; CurveData="Curve Data..."; FieldAnalysis="Field Extremum Analysis..."; Apply="Apply"; Reset="Reset";
 Source="Source"; ODBFile="ODB File"; Target="Target"; Instance="Instance"; ElementSet="Element Set"; Step="Step"; Frame="Frame";
@@ -637,7 +653,7 @@ Ready="Ready"; NoODB="ODB: not loaded"; Whole="<Whole Instance>"; AllGrains="<Al
 SeriesCount="Selected states"
 }
 zh = @{
-Window="ODB2VTU-S 数据导出器"; File="_文件"; Open="打开 ODB..."; Exit="退出"; Edit="_编辑"; View="_视图"; Tools="_工具"; Help="_帮助";
+Window="ODB2VTU-S 统一工作台"; File="_文件"; Open="打开 ODB..."; Exit="退出"; Edit="_编辑"; View="_视图"; Tools="_工具"; Help="_帮助";
 OpenODB="打开 ODB"; ReadMeta="读取元数据"; ReadFields="读取场变量"; Export="导出数据"; OpenFolder="打开输出文件夹"; Language="语言";
 Properties="属性"; CurveData="曲线数据..."; FieldAnalysis="场变量极值分析..."; Apply="应用"; Reset="重置";
 Source="数据源"; ODBFile="ODB 文件"; Target="目标状态"; Instance="实例"; ElementSet="单元集"; Step="分析步"; Frame="帧";
@@ -654,6 +670,43 @@ SeriesCount="已选状态数"
 }
 
 function L([string]$k){ return $T[$script:lang][$k] }
+
+# Visible WPF strings only. Never mutate Tag, x:Name, command arguments or array identifiers.
+function Localize-SubwindowXaml([xml]$Document, [string]$Lang) {
+    $pairs = @{
+      'Field Extremum Analysis'=@('场变量极值分析','Field Extremum Analysis')
+      'Top N grains'=@('晶粒数量 Top N','Top N grains')
+      'Rank statistic'=@('排序统计量','Rank statistic')
+      'Direction'=@('排序方向','Direction')
+      'Extreme band (%)'=@('极值区间（%）','Extreme band (%)')
+      'Mean'=@('平均值','Mean')
+      'Maximum'=@('最大值','Maximum')
+      'Minimum'=@('最小值','Minimum')
+      'Instance'=@('实例','Instance')
+      'Step'=@('分析步','Step')
+      'Frame'=@('帧','Frame')
+      'Field'=@('场变量','Field')
+      'ODB'=@('ODB 文件','ODB')
+      'Running...'=@('正在运行...','Running...')
+      'Analysis Log / 分析结果'=@('分析日志','Analysis Log')
+      'Percent of the full grain-statistic span from the selected extreme.'=@('相对于全部晶粒统计值范围的极值百分比。','Percentage of the full grain-statistic range measured from the selected extreme.')
+      '默认只写出 Top N 晶粒的几何体；其他晶粒不会进入该 VTU。可切换为极值范围、单个极值晶粒或全部晶粒。'=@('默认只导出 Top N 晶粒；可切换为极值区间、极值晶粒或全部晶粒。','By default, only Top N grain geometry is exported. Other options: extreme band, one extreme grain, or all grains.')
+      '只分析晶粒单元；可选 Bounding Box：xmin,xmax,ymin,ymax,zmin,zmax'=@('仅分析晶粒单元；可选包围盒：xmin,xmax,ymin,ymax,zmin,zmax','Analyze grain elements only. Optional bounding box: xmin,xmax,ymin,ymax,zmin,zmax')
+    }
+    foreach($attr in $Document.SelectNodes('//@*')) {
+      if($attr.LocalName -notin @('Title','Header','Text','Content','ToolTip')) { continue }
+      $v=$attr.Value
+      if($pairs.ContainsKey($v)) { $attr.Value=$pairs[$v][[int]($Lang -eq 'en')]; continue }
+      if($v -match '^(.*?) / (.*?)$') {
+         $left=$Matches[1];$right=$Matches[2]
+         $lc=[regex]::IsMatch($left,'[\u3400-\u9fff]')
+         $rc=[regex]::IsMatch($right,'[\u3400-\u9fff]')
+         if($lc -and -not $rc) { $attr.Value=$(if($Lang -eq 'zh'){$left}else{$right}) }
+         elseif($rc -and -not $lc) { $attr.Value=$(if($Lang -eq 'zh'){$right}else{$left}) }
+      }
+    }
+}
+
 
 
 $script:customFieldOutputDir = ""
@@ -986,10 +1039,37 @@ function RefreshElementSetLanguage {
 function ApplyLanguage {
     $window.Title = L "Window"
     $menuFile.Header = L "File"; $miOpen.Header = L "Open"; $miExit.Header = L "Exit"
-    $menuEdit.Header = L "Edit"; $menuView.Header = L "View"; $menuTools.Header = L "Tools"; $miCurveData.Header = L "CurveData"; $menuHelp.Header = L "Help"
+    $menuEdit.Header = L "Edit"; $menuView.Header = L "View"; $menuTools.Header = L "Tools"; $miCurveData.Header = L "CurveData"; $miFieldAnalysis.Header = L "FieldAnalysis"; $menuHelp.Header = L "Help"
+    if($script:lang -eq 'zh'){ $miCPFEM.Header='摩擦 CPFEM 后处理（History / PEEQCP）...'; $miDataSafety.Header='数据诊断与安全恢复...' }
+    else { $miCPFEM.Header='Friction CPFEM (History / PEEQCP)...'; $miDataSafety.Header='Data Diagnosis and Safe Recovery...' }
 
     $tbOpen.Content = L "OpenODB"; $tbRead.Content = L "ReadMeta"; $tbFields.Content = L "ReadFields"; $tbExport.Content = L "Export"; $tbOpenFolder.Content = L "OpenFolder"
     $lblLanguage.Text = L "Language"
+    if($script:lang -eq 'zh') {
+        $cmbFramePolicy.Items[0].Content='合并／保留既有帧'
+        $cmbFramePolicy.Items[1].Content='同步当前所选帧'
+        $cmbFieldPolicy.Items[0].Content='合并／保留既有变量'
+        $cmbFieldPolicy.Items[1].Content='同步当前变量'
+        $chkCleanupRemoved.Content='同步帧时物理删除已移除的 VTU（危险）'
+        $lblCompatMode.Text='旧版数据兼容模式'
+        $cmbCompatMode.Items[0].Content='标准增量（已有 Manifest）'
+        $cmbCompatMode.Items[1].Content='快速兼容（无 Manifest，两帧抽样）'
+        $cmbCompatMode.Items[2].Content='严格验证（逐帧核对数值）'
+        $chkInPlace.Content='原位增量更新已有 VTU（不新建文件夹）'
+        $txtCompatHint.Text='勾选原位更新：同目录临时写入并原子替换，保留临时回滚硬链接直至完成。'
+    } else {
+        $cmbFramePolicy.Items[0].Content='Merge / preserve existing frames'
+        $cmbFramePolicy.Items[1].Content='Sync current selection'
+        $cmbFieldPolicy.Items[0].Content='Merge / preserve existing fields'
+        $cmbFieldPolicy.Items[1].Content='Sync selected fields'
+        $chkCleanupRemoved.Content='Delete removed-frame VTU files (dangerous)'
+        $lblCompatMode.Text='Legacy compatibility mode'
+        $cmbCompatMode.Items[0].Content='Standard incremental (Manifest exists)'
+        $cmbCompatMode.Items[1].Content='Fast legacy (two sampled states)'
+        $cmbCompatMode.Items[2].Content='Strict (verify native values per frame)'
+        $chkInPlace.Content='Update existing VTUs in place (no new data directory)'
+        $txtCompatHint.Text='In-place: write adjacent temporary files then atomically replace VTUs; rollback hardlinks are temporary.'
+    }
 
     $hdrProperties.Text = L "Properties"; $btnApply.Content = L "Apply"; $btnReset.Content = L "Reset"
 
@@ -1086,6 +1166,7 @@ function UpdateSummary {
     $s += "Frame policy : " + $fp + "`r`n"
     $s += "Field policy : " + $fldp + "`r`n"
     if($chkCleanupRemoved.IsChecked){ $s += "Cleanup removed VTU : yes`r`n" }
+    $s += "Write mode : " + $(if($chkInPlace.IsChecked){'in_place'}else{'safe_copy'}) + "`r`n"
     
     $s += (L "OutputFile") + " : " + $txtOutput.Text
     $txtSummary.Text = $s
@@ -1374,7 +1455,33 @@ function RunExport {
     if($cmbFieldPolicy.SelectedItem -ne $null){ $fieldPolicy = $cmbFieldPolicy.SelectedItem.Tag.ToString() }
     $cleanupRemoved = 0
     if($chkCleanupRemoved.IsChecked){ $cleanupRemoved = 1 }
-    $policyArg = " --field-policy " + $fieldPolicy
+    # v0.2.1 safety: Sync is destructive, and is never silently confirmed.
+    $confirmFrameSync = 0
+    $confirmFieldSync = 0
+    $confirmDeleteFiles = 0
+    if($chkSeries.IsChecked -and $framePolicy -eq "sync"){
+        $answer = [Windows.MessageBox]::Show(
+            $(if($script:lang -eq "zh"){"帧同步会从当前 PVD 时间序列中移除所有未选中的帧（默认保留物理文件）。仅添加 SDV 时应使用帧合并。确定执行帧同步？"}else{"FRAME SYNC removes every unselected Step/Frame from the active PVD series (files remain unless cleanup enabled). For adding SDVs use Frame Merge. Continue?"}),
+            $(if($script:lang -eq "zh"){"ODB2VTU-S - 确认帧同步"}else{"ODB2VTU-S - Confirm Frame Sync"}), "YesNo", "Warning")
+        if($answer -ne "Yes"){ return }
+        $confirmFrameSync = 1
+    }
+    if($fieldPolicy -eq "sync"){
+        $answer = [Windows.MessageBox]::Show(
+            $(if($script:lang -eq "zh"){"字段同步会删除本次未选择的既有变量和 GND/IPF 派生场；新增 SDV 应选择字段合并。确定执行字段同步？"}else{"FIELD SYNC removes all previously exported variables and derived fields not selected now. Use Field Merge to preserve existing fields. Continue?"}),
+            $(if($script:lang -eq "zh"){"ODB2VTU-S - 确认删除字段"}else{"ODB2VTU-S - Confirm Field Deletion"}), "YesNo", "Warning")
+        if($answer -ne "Yes"){ return }
+        $confirmFieldSync = 1
+    }
+    if($chkSeries.IsChecked -and $cleanupRemoved -eq 1){
+        $answer = [Windows.MessageBox]::Show(
+            $(if($script:lang -eq "zh"){"危险：此操作将在帧同步后永久删除未选中帧的 VTU 文件，不仅仅是将它们移出 PVD。确认永久删除？"}else{"DANGER: this PHYSICALLY DELETES unselected VTU files after Frame Sync, not just removes them from PVD. Continue?"}),
+            $(if($script:lang -eq "zh"){"ODB2VTU-S - 确认永久删除文件"}else{"ODB2VTU-S - Confirm File Deletion"}), "YesNo", "Error")
+        if($answer -ne "Yes"){ return }
+        $confirmDeleteFiles = 1
+    }
+    $policyArg = " --field-policy " + $fieldPolicy +
+                 " --confirm-field-sync " + $confirmFieldSync
 
     if(-not $chkSeries.IsChecked){
         $cmd = "abaqus python " + (Q $exportPy) +
@@ -1392,6 +1499,70 @@ function RunExport {
             return
         }
 
+        $compatMode = 'fast'
+        if($cmbCompatMode.SelectedItem){$compatMode=$cmbCompatMode.SelectedItem.Tag.ToString()}
+        $writeMode = 'safe_copy'
+        if($chkInPlace.IsChecked){
+            if(-not (Test-Path $txtOutput.Text -PathType Leaf)){
+                [Windows.MessageBox]::Show($(if($script:lang -eq 'zh'){'原位更新必须选择一个已经存在的 PVD。首次导出请取消此选项。'}else{'In-place update requires an existing PVD; uncheck for first export.'}))
+                return
+            }
+            if($framePolicy -ne 'merge' -or $fieldPolicy -ne 'merge' -or $cleanupRemoved -ne 0){
+                [Windows.MessageBox]::Show($(if($script:lang -eq 'zh'){'原位更新只允许 Frame Merge + Field Merge，且不能删除 VTU。'}else{'In-place update requires Frame Merge + Field Merge and no deletion.'}))
+                return
+            }
+            if($compatMode -eq 'standard'){
+                # Standard remains valid for already manifest-backed datasets.
+                $stem=[System.IO.Path]::GetFileNameWithoutExtension($txtOutput.Text)
+                $fd=Join-Path (Split-Path $txtOutput.Text -Parent) ($stem + '_frames')
+                if(-not (Test-Path (Join-Path $fd '_ODB2VTUS_manifest.json'))){
+                    [Windows.MessageBox]::Show($(if($script:lang -eq 'zh'){'无 Manifest 时请选择快速兼容或严格验证。'}else{'Choose Fast or Strict for a dataset without Manifest.'}))
+                    return
+                }
+            }
+            $note=if($script:lang -eq 'zh'){
+                '将直接更新已有 VTU，原文件名和 PVD 路径不变。不复制到新目录。每帧使用同目录临时文件进行校验，随后原子替换；如异常终止会保留回滚硬链接及日志供恢复。请确保数据已经有独立备份。确定继续？'
+            }else{
+                'Update existing VTUs at their original paths. No migration folder. Each frame uses an adjacent temp file and atomic replacement; hardlink rollback aliases and a journal protect interruptions. Ensure you have an independent backup. Continue?'
+            }
+            if([Windows.MessageBox]::Show($note,'ODB2VTU-S - In-place update','YesNo','Warning') -ne 'Yes'){return}
+            $writeMode = 'in_place'
+        }
+        # A missing Manifest in an early-version export is normal. Fast/strict
+        # mode automatically creates a separately verified MIGRATED_SAFE copy.
+        # Standard mode keeps the old provenance guard and adoption option.
+        $adoptArg = ''
+        if($compatMode -eq 'standard' -and (Test-Path $txtOutput.Text -PathType Leaf)){
+            $targetPvdDir=Split-Path $txtOutput.Text -Parent
+            $targetPvdStem=[System.IO.Path]::GetFileNameWithoutExtension($txtOutput.Text)
+            $targetManifest=Join-Path (Join-Path $targetPvdDir ($targetPvdStem + '_frames')) '_ODB2VTUS_manifest.json'
+            if(-not (Test-Path $targetManifest -PathType Leaf)){
+                $info=if($script:lang -eq 'zh'){
+                    '标准模式需要匹配的 Manifest；早期无 Manifest 数据推荐选快速兼容模式。是否选择已有原始 Manifest？'
+                } else {'Standard mode requires Manifest. Use Fast mode for legacy data. Browse an original Manifest instead?'}
+                if([Windows.MessageBox]::Show($info,'ODB2VTU-S','YesNo','Warning') -ne 'Yes'){return}
+                $picker=New-Object Microsoft.Win32.OpenFileDialog
+                $picker.Filter='Manifest JSON (*.json)|*.json'
+                if($picker.ShowDialog() -ne $true){return}
+                $adoptArg=' --adopt-manifest-path ' + (Q $picker.FileName)
+            }
+        }
+        if($writeMode -eq 'safe_copy' -and $compatMode -ne 'standard' -and (Test-Path $txtOutput.Text -PathType Leaf)){
+            $targetPvdDir=Split-Path $txtOutput.Text -Parent
+            $targetPvdStem=[System.IO.Path]::GetFileNameWithoutExtension($txtOutput.Text)
+            $targetManifest=Join-Path (Join-Path $targetPvdDir ($targetPvdStem + '_frames')) '_ODB2VTUS_manifest.json'
+            if(-not (Test-Path $targetManifest -PathType Leaf)){
+                if($framePolicy -ne 'merge' -or $fieldPolicy -ne 'merge' -or $cleanupRemoved -ne 0){
+                    [Windows.MessageBox]::Show($(if($script:lang -eq 'zh'){'旧版兼容导出只允许 Frame Merge + Field Merge，且禁止删除文件。'}else{'Legacy compatibility requires Frame Merge + Field Merge with deletion disabled.'}))
+                    return
+                }
+                $hint=if($script:lang -eq 'zh'){
+                    '检测到无 Manifest 的早期数据。程序将核验后复制全部 PVD/VTU 至新 MIGRATED_SAFE 目录，并在那里追加字段。原目录只读。继续？'
+                }else{'Legacy PVD without Manifest found. Verify/copy to NEW MIGRATED_SAFE folder, then append fields there. Originals stay read-only. Continue?'}
+                if([Windows.MessageBox]::Show($hint,'ODB2VTU-S','YesNo','Warning') -ne 'Yes'){return}
+            }
+        }
+
         $cmd = "abaqus python " + (Q $seriesPy) +
                " --odb " + (Q $txtOdb.Text) +
                " --instance " + (Q $inst) +
@@ -1400,7 +1571,12 @@ function RunExport {
                " --fields " + (Q $fields) +
                $setArg + $bboxArg + $diffArg + $derivedArg + $policyArg +
                " --frame-policy " + $framePolicy +
-               " --cleanup-removed-frames " + $cleanupRemoved
+               " --cleanup-removed-frames " + $cleanupRemoved +
+               " --confirm-frame-sync " + $confirmFrameSync +
+               " --confirm-delete-files " + $confirmDeleteFiles +
+               " --compatibility-mode " + $compatMode +
+               " --write-mode " + $writeMode +
+               $adoptArg
     }
 
     # Launch through a small progress wrapper. The banner appears before
@@ -1411,7 +1587,7 @@ function RunExport {
         '@echo off'
         'title ODB2VTU-S Export - Active'
         'echo ============================================================'
-        'echo ODB2VTU-S v0.2.0 - VTU / PVD incremental export'
+        'echo ODB2VTU-S v0.2.1 - SAFE VTU / PVD export'
         'echo ============================================================'
         'echo Status: STARTING Abaqus Python'
         'echo Large ODB files may take time to open or read field arrays.'
@@ -1557,6 +1733,7 @@ function ShowFieldAnalysisWindow {
   </DockPanel>
 </Window>
 "@
+    Localize-SubwindowXaml $axaml $script:lang
     $ar = New-Object System.Xml.XmlNodeReader $axaml
     $aw = [Windows.Markup.XamlReader]::Load($ar)
     $aw.Owner = $window
@@ -1690,6 +1867,7 @@ function ShowCurveDataWindow {
             <StackPanel Orientation="Horizontal">
                 <Button x:Name="cBtnReadMeta" Content="Read History Metadata"/>
                 <Button x:Name="cBtnExport" Content="Export CSV" Margin="5,0,0,0" Background="#E2EEF8"/>
+                <Button x:Name="cBtnFriction" Content="Friction CSV (ALL/NORMAL/TANGENTIAL/DIAGNOSTIC)" Margin="5,0,0,0"/>
                 <Button x:Name="cBtnOpenFolder" Content="Open Output Folder" Margin="5,0,0,0"/>
             </StackPanel>
         </Border>
@@ -1962,7 +2140,7 @@ function ShowCurveDataWindow {
     $cw.Owner = $window
 
     $cnames = @(
-        "cBtnReadMeta","cBtnExport","cBtnOpenFolder","cStatus",
+        "cBtnReadMeta","cBtnExport","cBtnFriction","cBtnOpenFolder","cStatus",
         "cGrpSource","cLblOdb","cTxtOdb","cBtnBrowseOdb",
         "cGrpHistory","cLblSteps","cLstSteps","cLblRegion","cCmbRegion","cLblRegionFilter","cTxtRegionFilter","cLblNodeLocator","cLblNodeLabel","cTxtNodeLabel","cBtnFindNode","cLblPreset","cCmbPreset",
         "cGrpXY","cLblX","cCmbX","cLblY","cCmbY","cChkAbsX","cChkAbsY",
@@ -2473,6 +2651,7 @@ function ShowCurveDataWindow {
         $cw.Title = "曲线数据"
         $cBtnReadMeta.Content = "读取 History 元数据"
         $cBtnExport.Content = "导出 CSV"
+        $cBtnFriction.Content = "导出摩擦专用 CSV（四类文件）"
         $cBtnOpenFolder.Content = "打开输出文件夹"
         $cGrpSource.Header = "数据源"
         $cLblOdb.Text = "ODB 文件"
@@ -2512,6 +2691,19 @@ function ShowCurveDataWindow {
 
     $cBtnReadMeta.Add_Click({ CurveReadMeta })
     $cBtnExport.Add_Click({ CurveExport })
+    $cBtnFriction.Add_Click({
+        if(-not (Test-Path -LiteralPath $cTxtOdb.Text -PathType Leaf)) {
+            [Windows.MessageBox]::Show($(if($script:lang -eq 'zh'){'请先选择有效的 ODB 文件。'}else{'Select a valid ODB first.'}))
+            return
+        }
+        $backend = Join-Path $scriptDir 'abaqus_postprocess_master.py'
+        if(-not (Test-Path -LiteralPath $backend)) { [Windows.MessageBox]::Show('History backend not found.'); return }
+        $outroot = if($cChkAutoOutput.IsChecked) { Split-Path -Parent $cTxtOdb.Text } else { Get-CurveOutputDirectory $cTxtOdb.Text }
+        $cmd = 'abaqus python ' + (Q $backend) + ' --operation history --odb ' + (Q $cTxtOdb.Text) + ' --outroot ' + (Q $outroot)
+        CMsg('Friction history exporter: ' + $cmd)
+        $cStatus.Text = $(if($script:lang -eq 'zh'){'正在导出摩擦专用曲线...'}else{'Exporting friction-specific curves...'})
+        Start-Process -FilePath 'cmd.exe' -ArgumentList @('/k', $cmd) | Out-Null
+    })
 
     $cBtnOpenFolder.Add_Click({
         if(-not [string]::IsNullOrWhiteSpace($cTxtOutput.Text)){
@@ -2580,7 +2772,7 @@ function ShowCurveDataWindow {
 
 # ---------------- EVENTS ----------------
 
-$cmbLanguage.SelectedIndex = 0
+$cmbLanguage.SelectedIndex = 1
 $cmbLanguage.Add_SelectionChanged({
     $script:lang = $cmbLanguage.SelectedItem.Tag.ToString()
     ApplyLanguage
@@ -2590,6 +2782,18 @@ $miOpen.Add_Click({ BrowseODB })
 $miExit.Add_Click({ $window.Close() })
 $miCurveData.Add_Click({ ShowCurveDataWindow })
 $miFieldAnalysis.Add_Click({ ShowFieldAnalysisWindow })
+$miCPFEM.Add_Click({
+    $script = Join-Path $scriptDir 'cpfem_integrated.ps1'
+    if(-not (Test-Path -LiteralPath $script)) { [Windows.MessageBox]::Show('Integrated CPFEM module missing.'); return }
+    & $script -InitialODB $txtOdb.Text -Language $script:lang
+})
+$miDataSafety.Add_Click({
+    $script = Join-Path $scriptDir 'odb_gui_recovery.ps1'
+    if(-not (Test-Path -LiteralPath $script)) { [Windows.MessageBox]::Show('Data safety module missing.'); return }
+    . $script
+    $pvd = if($txtOutput.Text -and $txtOutput.Text.EndsWith('.pvd',[StringComparison]::OrdinalIgnoreCase)){$txtOutput.Text}else{''}
+    Show-DataSafetyWorkspace $pvd $script:lang
+})
 
 $tbOpen.Add_Click({ BrowseODB })
 $btnBrowse.Add_Click({ BrowseODB })

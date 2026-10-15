@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
 
-import json, os, sys, argparse, traceback, time
+import json, os, sys, argparse, traceback, time, shutil, datetime, uuid
 from xml.sax.saxutils import escape
 from odbAccess import openOdb
 
 from odb_export_vtu import parse_bbox, selected_elements, export_frame
 from odb_vtu_incremental import patch_spec, merge_vtu, vtu_arrays, expected_derived
 from odb_export_legacy import _read_legacy_signature, _signature_spec
+from odb_manifest_adoption import verify_original_manifest
+from odb_legacy_migration import run as migrate_legacy
+from odb_legacy_inplace import adopt_in_memory
+from odb_inplace_transaction import InPlaceTransaction
 from odb_export_inventory import scan_vtu_directory, allocate_vtu_name, _pvd_filenames
 from odb_export_state import (
     atomic_replace, atomic_write_json, export_kwargs_from_spec,
@@ -116,12 +120,108 @@ def export_with_spec(odb, instance_name, step_name, frame_index, out_path,
     return result[0]
 
 
+def _snapshot_existing(path, recovery_dir):
+    """Preserve the previous version before any in-place replacement.
+
+    Same-volume hard links cost almost no time or space, while os.replace on
+    the original path leaves the linked old inode intact. On unsupported file
+    systems fall back to a byte-for-byte copy, never silently skip protection.
+    """
+    if not os.path.isfile(path):
+        return None
+    if not os.path.isdir(recovery_dir):
+        os.makedirs(recovery_dir)
+    destination = os.path.join(recovery_dir, os.path.basename(path))
+    if os.path.exists(destination):
+        raise RuntimeError("Recovery backup filename collision: " + destination)
+    try:
+        os.link(path, destination)
+        how = "hardlink"
+    except (OSError, IOError):
+        shutil.copy2(path, destination)
+        how = "copy"
+    print("RECOVERY BACKUP [%s]: %s" % (how, destination))
+    return destination
+
+
+def _required_arrays(spec):
+    needed = set(spec.get("native_fields") or [])
+    for group in expected_derived(spec).values():
+        needed.update(group)
+    return needed
+
+
+def _assert_preservation(before_arrays, after_arrays, expected_arrays):
+    missing = set(expected_arrays) - set(after_arrays)
+    if missing:
+        raise RuntimeError("VTU field validation failed; missing required arrays: %s" %
+                           sorted(missing)[:20])
+    removed = set(before_arrays) - set(after_arrays)
+    if removed:
+        raise RuntimeError("Field Merge would lose existing VTU arrays: %s" %
+                           sorted(removed)[:20])
+
+
+def prepare_compatibility_output(a):
+    """On a pre-manifest PVD, make a separately verified/copying baseline.
+
+    Never infer provenance or write to an existing legacy VTU. The returned
+    PVD is under MIGRATED_SAFE, and the old collection is read-only.
+    """
+    target = os.path.abspath(a.out_pvd)
+    if not os.path.isfile(target):
+        return target
+    stem = os.path.splitext(os.path.basename(target))[0]
+    folder = os.path.join(os.path.dirname(target), stem + "_frames")
+    metadata = load_manifest(os.path.join(folder, MANIFEST_NAME))
+    if metadata is not None and metadata.get('frames'):
+        return target
+    if a.adopt_manifest_path:
+        # Preserve explicit original-manifest import for restored datasets.
+        return target
+    if a.write_mode == 'in_place':
+        return target  # No migration directory, adopt in memory below.
+    if a.compatibility_mode == 'standard':
+        return target  # Existing provenance guard remains in main().
+    if a.frame_policy != 'merge' or a.field_policy != 'merge' or a.cleanup_removed_frames:
+        raise RuntimeError('SAFETY STOP: legacy compatibility migration only '
+                           'supports Frame Merge + Field Merge, without file deletion.')
+    if not os.path.isdir(folder):
+        raise RuntimeError('SAFETY STOP: legacy frame directory is missing: ' + folder)
+    dest = os.path.join(os.path.dirname(target), stem + '_MIGRATED_SAFE',
+                        os.path.basename(target))
+    if os.path.exists(os.path.dirname(dest)):
+        raise RuntimeError('SAFETY STOP: an earlier migration exists: %s. '
+                           'Select its PVD directly to continue, or preserve '
+                           'it and choose another source.' % dest)
+    from argparse import Namespace
+    request = Namespace(odb=a.odb, pvd=target, instance=a.instance,
+                        element_set=a.element_set, bbox=a.bbox,
+                        mode=a.compatibility_mode)
+    print('[COMPATIBILITY] Old collection without Manifest; '
+          'copying to independent MIGRATED_SAFE directory (mode=%s).' %
+          a.compatibility_mode)
+    sys.stdout.flush()
+    migrate_legacy(request)  # raises if geometry, field or provenance fails
+    if not os.path.isfile(dest):
+        raise RuntimeError('Migration did not publish the expected PVD: ' + dest)
+    print('[COMPATIBILITY] Migrated PVD: ' + dest)
+    return dest
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--odb", required=True)
     p.add_argument("--instance", required=True)
     p.add_argument("--selection-file", required=True)
     p.add_argument("--out-pvd", required=True)
+    p.add_argument("--write-mode", choices=("safe_copy", "in_place"), default="safe_copy",
+                   help="Directly replace existing VTUs only after checked merge; no MIGRATED_SAFE copy.")
+    p.add_argument("--compatibility-mode", default="standard",
+                   choices=("standard", "fast", "strict"),
+                   help="Manifest-backed standard update, automatic fast legacy copy, or strict numeric legacy copy.")
+    p.add_argument("--adopt-manifest-path", default="",
+                   help="Explicitly select a matching original Manifest for a restored dataset.")
     p.add_argument("--fields", default="")
     p.add_argument("--element-set", default="")
     p.add_argument("--bbox", default="")
@@ -143,6 +243,10 @@ def main():
     p.add_argument("--frame-policy", default="merge", choices=["merge","sync"])
     p.add_argument("--field-policy", default="merge", choices=["merge","sync"])
     p.add_argument("--cleanup-removed-frames", type=int, default=0)
+    # Explicit confirmations, ideally supplied only after a GUI Yes/No prompt.
+    p.add_argument("--confirm-frame-sync", type=int, default=0)
+    p.add_argument("--confirm-field-sync", type=int, default=0)
+    p.add_argument("--confirm-delete-files", type=int, default=0)
     a = p.parse_args()
 
     odb = None
@@ -158,6 +262,15 @@ def main():
         if not raw:
             raise RuntimeError("No Step/Frame states were selected.")
 
+        # Migration is a one-way transaction on a NEW directory. Legacy originals
+        # stay immutable even when a later SDV export fails. This check must
+        # occur before making or opening any output dataset path.
+        if a.write_mode == 'in_place':
+            if a.frame_policy != 'merge' or a.field_policy != 'merge' or a.cleanup_removed_frames:
+                raise RuntimeError('In-place mode requires Frame Merge + Field Merge without deletion.')
+            if not os.path.isfile(a.out_pvd):
+                raise RuntimeError('In-place mode requires an existing PVD; refusing first export.')
+        a.out_pvd = prepare_compatibility_output(a)
         pvd = os.path.abspath(a.out_pvd)
         pdir = os.path.dirname(pvd) or os.getcwd()
         if not os.path.exists(pdir):
@@ -218,6 +331,27 @@ def main():
 
         requested_spec = current_output_spec(a, fields)
         rev = source_revision(a.odb)
+        # Restored datasets may contain intact PVD/VTU files but lack the
+        # v0.2 manifest. Never guess their provenance. A user-supplied
+        # original manifest can be adopted only after EVERY published frame
+        # and EVERY expected field passes a read-only verification.
+        if a.adopt_manifest_path:
+            if manifest is not None and manifest.get("frames"):
+                raise RuntimeError(
+                    "Current output directory already has a valid populated "
+                    "Manifest; original-manifest adoption is unnecessary.")
+            manifest, verified_count = verify_original_manifest(
+                a.adopt_manifest_path, manifest_path, pvd, frame_dir,
+                src_id, rev)
+            print("VERIFIED ORIGINAL MANIFEST: %d PVD states and their VTU "
+                  "fields validated; source metadata adopted IN MEMORY." %
+                  verified_count)
+            sys.stdout.flush()
+        if (manifest is None and a.write_mode == 'in_place' and
+                not a.adopt_manifest_path):
+            if a.compatibility_mode == 'standard':
+                raise RuntimeError('In-place legacy adoption requires Fast or Strict compatibility.')
+            manifest = adopt_in_memory(a, odb, bbox, mesh_cache, rev)
         if manifest is None:
             manifest = new_manifest(src_id)
         frames = manifest.setdefault("frames", {})
@@ -227,7 +361,21 @@ def main():
             frame_dir, stem, step_names,
             lambda name: len(odb.steps[name].frames), pvd, frames)
         for issue in inventory_issues:
-            print("VTU INVENTORY WARNING:", issue)
+            print("VTU INVENTORY INFO:" if issue.startswith('PRESERVED UNREFERENCED') else "VTU INVENTORY WARNING:", issue)
+        # A filename preference is not a data-preservation decision: same
+        # Step/Frame may have two versions with DIFFERENT field arrays.
+        # Never silently choose one, or overwrite the only rich-field copy.
+        # If the published PVD is unambiguous, only its refs are eligible.
+        # Duplicates in *unreferenced historical* VTUs are diagnostic notes,
+        # never blockers. Real PVD duplicates fail in _published_pvd_states().
+        duplicates = [issue for issue in inventory_issues
+                      if issue.startswith("Duplicate files for one ODB Step/Frame:")]
+        if duplicates:
+            raise RuntimeError(
+                "AMBIGUOUS EXISTING FRAMES: %d Step/Frame state(s) have multiple "
+                "VTU files. No files or PVD were modified. Back up this folder "
+                "and reconcile the duplicates before exporting. Examples: %s" %
+                (len(duplicates), " | ".join(duplicates[:4])))
         print("VTU files found: %d ; matched ODB frames: %d ; highest serial: %d" %
               (len(names_on_disk), len(found), next_serial))
 
@@ -309,9 +457,12 @@ def main():
                 "%d existing VTU states lack trustworthy export metadata; "
                 "refusing to overwrite or silently skip them. "
                 "Original VTU/PVD remain untouched. Examples: %s. "
-                "Use the matching original _ADE_export_signature.txt, "
-                "or choose a fresh output dataset." %
-                (len(unverified), ", ".join(unverified[:5])))
+                "Expected metadata at: %s. For a restored/copied dataset, "
+                "choose the ORIGINAL matching _ODB2VTUS_manifest.json via "
+                "--adopt-manifest-path (the program verifies all PVD frames "
+                "and actual VTU arrays before reuse); otherwise choose a "
+                "fresh output dataset." %
+                (len(unverified), ", ".join(unverified[:5]), manifest_path))
 
         if adopted:
             print("VTU INVENTORY: adopted %d legacy states; existing filenames kept." %
@@ -324,6 +475,47 @@ def main():
             if len(ignored_orphans) > 10:
                 print("  ... and %d more." % (len(ignored_orphans) - 10))
         print("VTU INVENTORY: %d states ready for incremental export." % len(frames))
+
+        previous_active = [k for k, ent in frames.items()
+                           if ent.get("active", True)]
+        removed_frame_keys = sorted(set(previous_active) - selected_keys)
+        if a.frame_policy == "sync" and removed_frame_keys and not a.confirm_frame_sync:
+            raise RuntimeError(
+                "SAFETY STOP: Frame Sync would remove %d previously active "
+                "Step/Frame(s) from the PVD (e.g. %s). Use Frame Merge to "
+                "retain them, or explicitly confirm Frame Sync in the GUI." %
+                (len(removed_frame_keys), ", ".join(removed_frame_keys[:3])))
+        if a.cleanup_removed_frames and not a.confirm_delete_files:
+            raise RuntimeError(
+                "SAFETY STOP: deleting old VTU files requires a second explicit "
+                "confirmation. Disable Delete removed VTUs to keep all originals.")
+        if a.field_policy == "sync" and not a.confirm_field_sync:
+            # Sync can remove fields, including when user accidentally selects
+            # only a few new SDVs; ask once, before touching any existing file.
+            needs_confirmation = any(
+                frames.get(k, {}).get("output_spec") is not None
+                for k in selected_keys)
+            if needs_confirmation:
+                raise RuntimeError(
+                    "SAFETY STOP: Field Sync may remove existing SDVs, IPF and GND "
+                    "fields. Use Field Merge to add SDVs, or explicitly confirm "
+                    "Field Sync in the GUI.")
+
+        # In-place mode uses same-directory zero-copy hard-link rollback aliases
+        # plus a journal. No migration directory and no full-size backup copy.
+        transaction = None
+        recovery_dir = None
+        if a.write_mode == 'in_place':
+            transaction = InPlaceTransaction(frame_dir)
+            transaction.start()
+            transaction.protect(pvd)
+            transaction.protect(manifest_path)
+        else:
+            recovery_dir = os.path.join(
+                frame_dir, "_ODB2VTUS_recovery",
+                datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:10])
+            _snapshot_existing(pvd, recovery_dir)
+            _snapshot_existing(manifest_path, recovery_dir)
 
         # Frame-level semantics:
         # merge: current selection is added/updated; omitted old frames remain active.
@@ -353,6 +545,14 @@ def main():
             if os.path.basename(vtu_name) != vtu_name:
                 raise RuntimeError("Unsafe frame filename in export manifest: %s" % vtu_name)
             vtu_path = os.path.join(frame_dir, vtu_name)
+            # Reject external mutations between legacy precheck and streaming
+            # merge. A timestamp/size mismatch is not safe to overwrite.
+            if (transaction is not None and 'adoption_original_size' in old and
+                    os.path.isfile(vtu_path)):
+                current_stat = os.stat(vtu_path)
+                if (current_stat.st_size != old['adoption_original_size'] or
+                        current_stat.st_mtime != old['adoption_original_mtime']):
+                    raise RuntimeError('VTU was changed after in-place preflight: ' + vtu_path)
             old_revision = old.get("source_revision")
             same_revision = (old_revision == rev)
             reusable = (
@@ -362,10 +562,19 @@ def main():
             )
 
             if reusable:
-                print("[%d/%d] unchanged -> %s / frame %d" %
-                      (seq, len(selected), sname, fi))
-                skipped += 1
-            else:
+                # The manifest is metadata, not proof that the corresponding
+                # arrays survived an earlier interrupted or buggy export.
+                actual = set().union(*vtu_arrays(vtu_path))
+                missing = _required_arrays(final_spec) - actual
+                if missing:
+                    print("WARNING: manifest says unchanged but VTU lacks: %s" %
+                          sorted(missing)[:20])
+                    reusable = False
+                else:
+                    print("[%d/%d] unchanged -> %s / frame %d" %
+                          (seq, len(selected), sname, fi))
+                    skipped += 1
+            if not reusable:
                 t_start = time.time()
                 valid_old = (old_spec is not None and same_revision and
                              os.path.isfile(vtu_path) and
@@ -376,13 +585,24 @@ def main():
                     if os.path.exists(leftover):
                         os.remove(leftover)
 
+                # Never FULL-overwrite an existing VTU based on an incomplete
+                # manifest or changed ODB: older fields might be irreplaceable.
+                if os.path.isfile(vtu_path) and not valid_old:
+                    raise RuntimeError(
+                        "SAFETY STOP: existing VTU cannot be safely reused "
+                        "(missing provenance or ODB revision changed): %s. "
+                        "Original VTU/PVD remain intact; use a NEW output path "
+                        "for a full re-export." % vtu_name)
                 patched = False
+                before_names = set()
                 if valid_old:
                     try:
                         point_names, cell_names = vtu_arrays(vtu_path)
                         present = point_names | cell_names
+                        before_names = set(present)
                         delta_spec, keep, need_delta = patch_spec(
-                            old_spec, final_spec, present)
+                            old_spec, final_spec, present,
+                            preserve_existing=(a.field_policy == "merge"))
                         # Existing fields are copied from the existing VTU;
                         # only missing/altered fields are extracted from ODB.
                         # ODB/geometry changes bypass this fast path entirely.
@@ -403,13 +623,24 @@ def main():
                         merge_vtu(vtu_path,
                                   patch_vtu if need_delta else None,
                                   tmp_vtu, keep)
+                        actual_after = set().union(*vtu_arrays(tmp_vtu))
+                        expected_after = _required_arrays(final_spec)
+                        if a.field_policy == "merge":
+                            _assert_preservation(before_names, actual_after, expected_after)
+                        elif expected_after - actual_after:
+                            raise RuntimeError("Field Sync output is missing required fields")
                         patched = True
                     except (RuntimeError, ValueError, IOError, OSError) as ex:
                         print("WARNING: incremental reuse unavailable: %s" % ex)
-                        print("         Switching to safe full-frame rebuild.")
+                        print("         No full overwrite is permitted for existing "
+                              "VTUs. Preserving original output.")
                         for leftover in (tmp_vtu, patch_vtu):
                             if os.path.isfile(leftover):
                                 os.remove(leftover)
+                        raise RuntimeError(
+                            "SAFETY STOP: incremental update failed for existing "
+                            "%s; original VTU/PVD retained. Cause: %s" %
+                            (vtu_name, ex))
 
                 if not patched:
                     print("[%d/%d] FULL EXPORT %s / frame %d" %
@@ -418,6 +649,11 @@ def main():
                     mesh_cache = export_with_spec(
                         odb, a.instance, sname, fi, tmp_vtu, final_spec,
                         a.element_set, bbox, mesh_cache, cache_bank)
+                # Back up the previous VTU before atomic replacement.
+                if transaction is not None:
+                    transaction.protect(vtu_path)
+                else:
+                    _snapshot_existing(vtu_path, recovery_dir)
                 # Merge and export both publish only complete replacement files.
                 atomic_replace(tmp_vtu, vtu_path)
                 if os.path.isfile(patch_vtu):
@@ -471,9 +707,23 @@ def main():
             datasets.append((global_t, rel))
             last_time = global_t
 
-        write_pvd(pvd, datasets)
+        # For a pure in-place Field Merge, keep the original PVD bytes and
+        # timestamps intact if its file timeline has not changed.
+        publish_pvd = True
+        if transaction is not None and os.path.isfile(pvd):
+            from xml.etree import ElementTree as ET
+            current_refs = [(x.get('file') or '').replace('\\', '/')
+                            for x in ET.parse(pvd).getroot().iter('DataSet')]
+            new_refs = [rel.replace('\\', '/') for _, rel in datasets]
+            publish_pvd = current_refs != new_refs
+        if publish_pvd:
+            write_pvd(pvd, datasets)
+        else:
+            print('[IN-PLACE] PVD reference order unchanged; preserving original PVD bytes.')
         atomic_write_json(manifest_path, manifest)
 
+        if transaction is not None:
+            transaction.commit()
         # Explicit cleanup is attempted only after publishing PVD/manifest.
         # Failed exports can therefore never delete old referenced VTUs.
         if a.frame_policy == "sync" and bool(a.cleanup_removed_frames):
@@ -488,8 +738,11 @@ def main():
                 fpath = os.path.join(frame_dir, name)
                 try:
                     if os.path.exists(fpath):
+                        # Physical deletion must also be reversible: snapshot
+                        # the excluded VTU before deleting its directory entry.
+                        _snapshot_existing(fpath, recovery_dir)
                         os.remove(fpath)
-                        print("REMOVED unused VTU: %s" % fpath)
+                        print("REMOVED unused VTU (recovery backup retained): %s" % fpath)
                 except OSError as ex:
                     print("WARNING: cleanup failed for %s: %s" % (fpath, ex))
 
@@ -505,6 +758,13 @@ def main():
         print("Open only the .pvd file in ParaView.")
         return 0
     except Exception:
+        if 'transaction' in locals() and transaction is not None and transaction.open:
+            try:
+                transaction.rollback()
+                print('IN-PLACE ROLLBACK: original files restored.')
+            except Exception as rollback_error:
+                print('CRITICAL: rollback incomplete; keep the journal and hardlinks:',
+                      rollback_error)
         print("FATAL EXCEPTION:")
         print(traceback.format_exc())
         return 99

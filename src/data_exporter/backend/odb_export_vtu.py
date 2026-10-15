@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
-import os, sys, argparse, traceback, math, re
+import os, sys, argparse, traceback, math, re, shutil, datetime, uuid
 from collections import defaultdict
 from odbAccess import openOdb
 from odb_export_state import (
@@ -942,6 +942,7 @@ def main():
     p.add_argument("--gnd-slide-diff", type=int, default=0)
     p.add_argument("--gnd-slide-ref", default="sliding0", choices=["sliding0","previous_last"])
     p.add_argument("--field-policy", default="merge", choices=["merge","sync"])
+    p.add_argument("--confirm-field-sync", type=int, default=0)
     a = p.parse_args()
 
     odb = None
@@ -964,7 +965,9 @@ def main():
         if manifest is None:
             manifest = new_manifest(src_id)
             if os.path.exists(out_path):
-                print("NOTE: legacy VTU detected without a v2 manifest; current request will rebuild it.")
+                raise RuntimeError("SAFETY STOP: existing single-frame VTU has no valid "
+                                   "v0.2 manifest. Full rebuilding here could remove "
+                                   "older fields. Use a new output file instead.")
 
         requested_spec = make_output_spec(
             fields,
@@ -983,7 +986,14 @@ def main():
         )
 
         key = state_key(a.step, a.frame)
-        old = manifest.setdefault("frames", {}).get(key) or {}
+        recorded = manifest.setdefault("frames", {})
+        if os.path.isfile(out_path) and recorded and key not in recorded:
+            raise RuntimeError("SAFETY STOP: existing single-frame output belongs to "
+                               "a different Step/Frame. Choose another output path.")
+        old = recorded.get(key) or {}
+        if os.path.isfile(out_path) and a.field_policy == "sync" and not a.confirm_field_sync:
+            raise RuntimeError("SAFETY STOP: Field Sync deletes unselected fields. "
+                               "Select Field Merge, or explicitly confirm Field Sync.")
         final_spec = merge_output_specs(old.get("output_spec"), requested_spec, a.field_policy)
         rev = source_revision(a.odb)
         reusable = (
@@ -993,23 +1003,85 @@ def main():
             old.get("source_revision") == rev
         )
 
-        odb = openOdb(a.odb, readOnly=True)
-        if reusable:
-            print("UNCHANGED: same frame and output fields already exist; skipping rebuild.")
-        else:
-            k = export_kwargs_from_spec(final_spec)
-            tmp_out = out_path + ".tmp"
-            if os.path.exists(tmp_out):
-                os.remove(tmp_out)
+        from odb_vtu_incremental import vtu_arrays, patch_spec, merge_vtu, expected_derived
+        def required_arrays(spec):
+            needed = set(spec.get("native_fields") or [])
+            for names in expected_derived(spec).values():
+                needed.update(names)
+            return needed
+        def emit(spec, destination):
+            k = export_kwargs_from_spec(spec)
             export_frame(
-                odb, a.instance, a.step, a.frame, tmp_out, k["fields"],
+                odb, a.instance, a.step, a.frame, destination, k["fields"],
                 a.element_set, bbox, k["delta_field"], k["ref_step"], k["ref_frame"],
                 derived_mises=k["derived_mises"], initial_ipf=k["initial_ipf"],
                 inp_path=k["inp_path"], ipf_dir=k["ipf_dir"],
                 gnd_diff=k["gnd_diff"], gnd_dat=k["gnd_dat"], gnd_diff_mode=k["gnd_diff_mode"],
                 gnd_slide_diff=k["gnd_slide_diff"], gnd_slide_ref=k["gnd_slide_ref"]
             )
+
+        if reusable:
+            actual = set().union(*vtu_arrays(out_path))
+            if required_arrays(final_spec) - actual:
+                reusable = False
+                print("WARNING: single-frame VTU lacks fields claimed by its manifest.")
+
+        odb = openOdb(a.odb, readOnly=True)
+        if reusable:
+            print("UNCHANGED: same frame and output fields already exist; skipping rebuild.")
+        else:
+            tmp_out = out_path + ".tmp"
+            patch_out = out_path + ".fields.tmp"
+            for leftover in (tmp_out, patch_out):
+                if os.path.isfile(leftover):
+                    os.remove(leftover)
+            exists = os.path.isfile(out_path)
+            if exists and (old.get("output_spec") is None or old.get("source_revision") != rev):
+                raise RuntimeError("SAFETY STOP: single-frame VTU provenance or "
+                                   "ODB revision is incompatible; use a new output path.")
+            if exists:
+                pnames, cnames = vtu_arrays(out_path)
+                present = pnames | cnames
+                patch, keep, need_delta = patch_spec(
+                    old["output_spec"], final_spec, present,
+                    preserve_existing=(a.field_policy == "merge"))
+                try:
+                    if need_delta:
+                        emit(patch, patch_out)
+                    merge_vtu(out_path, patch_out if need_delta else None, tmp_out, keep)
+                    after = set().union(*vtu_arrays(tmp_out))
+                    if required_arrays(final_spec) - after:
+                        raise RuntimeError("Updated VTU is missing requested fields")
+                    if a.field_policy == "merge" and present - after:
+                        raise RuntimeError("Field Merge would remove existing fields: %s" %
+                                           sorted(present - after)[:20])
+                except Exception:
+                    for leftover in (tmp_out, patch_out):
+                        if os.path.isfile(leftover):
+                            os.remove(leftover)
+                    raise
+            else:
+                emit(final_spec, tmp_out)
+                actual = set().union(*vtu_arrays(tmp_out))
+                if required_arrays(final_spec) - actual:
+                    raise RuntimeError("Full export did not provide all requested fields")
+
+            if exists:
+                recovery_dir = os.path.join(
+                    os.path.dirname(out_path), '_ODB2VTUS_recovery',
+                    datetime.datetime.now().strftime('%Y%m%d_%H%M%S') + '_' + uuid.uuid4().hex[:10])
+                os.makedirs(recovery_dir)
+                for original in (out_path, manifest_path):
+                    if os.path.isfile(original):
+                        destination = os.path.join(recovery_dir, os.path.basename(original))
+                        try:
+                            os.link(original, destination)
+                        except (OSError, IOError):
+                            shutil.copy2(original, destination)
+                        print('RECOVERY BACKUP:', destination)
             atomic_replace(tmp_out, out_path)
+            if os.path.isfile(patch_out):
+                os.remove(patch_out)
 
         manifest["frames"] = {
             key: {

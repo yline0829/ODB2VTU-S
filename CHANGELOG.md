@@ -1,3 +1,10 @@
+## [0.2.1] - Stable
+- PVD-authoritative Step/Frame reuse with unused historic VTUs preserved.
+- In-place incremental SDV Field Merge; source filenames stay unchanged.
+- Fast two-frame numerical witness or strict per-frame validation.
+- Transaction journal with atomic replace and NTFS hard-link rollback.
+- Chinese/English Windows workbench and integrated CPFEM post-processing.
+
 # Changelog
 
 All notable changes will be documented in this file.

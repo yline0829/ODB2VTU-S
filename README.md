@@ -1,5 +1,19 @@
 # ODB2VTU-S
 
+## v0.2.1 — PVD-authoritative in-place incremental export
+
+v0.2.1 is based on the user's validated rc10 workflow. For legacy PVD/VTU
+datasets without Manifest or ADE signature, use Fast Compatibility,
+Frame Merge + Field Merge, and the explicit In-place Update option.
+Only PVD-referenced VTUs are eligible for reuse; extra historical VTUs are
+preserved without causing false duplicate-frame errors.
+Two representative states receive numerical ODB witness checks; other
+states receive structural/mesh checks. Existing VTU DataArrays are retained.
+Writes use adjacent temporary files, atomic replacement, hard-link rollback
+aliases, and a transaction journal. Keep an independent data backup.
+The release is independent of Dassault Systèmes; Abaqus is required to read ODBs.
+
+
 ### Selective Abaqus ODB to ParaView & CPFEM Post-Processing Toolkit
 
 **English** | [简体中文](README.zh-CN.md)

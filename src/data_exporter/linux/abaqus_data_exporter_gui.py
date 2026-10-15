@@ -15,6 +15,7 @@ import queue
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from ui_i18n import translate
 
 APP_DIR = Path(__file__).resolve().parent
 META_PY = APP_DIR / 'odb_metadata.py'
@@ -24,6 +25,10 @@ SERIES_PY = APP_DIR / 'odb_export_series.py'
 CURVE_META_PY = APP_DIR / 'odb_curve_history_meta.py'
 CURVE_EXPORT_PY = APP_DIR / 'odb_curve_history_export.py'
 ANALYSIS_PY = APP_DIR / 'odb_field_analysis.py'
+CPFEM_MASTER_PY = APP_DIR / 'abaqus_postprocess_master.py'
+AUDIT_PY = APP_DIR / 'diagnose_output_readonly.py'
+RECOVERY_PY = APP_DIR / 'odb_recovery_safe.py'
+LEGACY_PY = APP_DIR / 'odb_legacy_migration.py'
 WORK_DIR = APP_DIR / '.ade_runtime'
 WORK_DIR.mkdir(exist_ok=True)
 META_JSON = WORK_DIR / 'metadata.json'
@@ -39,9 +44,11 @@ COF = 'COF=|RF1|/|CF2|'
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('ODB2VTU-S Exporter — Linux')
+        self.title('ODB2VTU-S Workbench v0.2.1 — Linux')
         self.geometry('1320x820')
         self.minsize(1080, 700)
+        self.lang = 'zh'
+        self._lang_widgets = []
         self.meta = None
         self.field_meta = None
         self.curve_meta = None
@@ -69,6 +76,7 @@ class App(tk.Tk):
         self.gnd_slide_ref_var = tk.StringVar(value='滑动第一帧 / First sliding frame')
         self.frame_policy_var = tk.StringVar(value='合并/保留既有帧 / Merge')
         self.field_policy_var = tk.StringVar(value='合并/保留既有变量 / Merge')
+        self.compatibility_mode_var = tk.StringVar(value='快速兼容（推荐）')
         self.cleanup_removed_var = tk.BooleanVar(value=False)
 
         self._style()
@@ -78,13 +86,256 @@ class App(tk.Tk):
         self.export_tab = ttk.Frame(self.nb)
         self.curve_tab = ttk.Frame(self.nb)
         self.analysis_tab = ttk.Frame(self.nb)
+        self.cpfem_tab = ttk.Frame(self.nb)
+        self.safety_tab = ttk.Frame(self.nb)
         self.nb.add(self.export_tab, text='ODB → VTU / PVD')
         self.nb.add(self.curve_tab, text='曲线数据 / Curve Data')
         self.nb.add(self.analysis_tab, text='场变量分析 / Field Analysis')
+        self.nb.add(self.cpfem_tab, text='摩擦 CPFEM / PEEQCP')
+        self.nb.add(self.safety_tab, text='数据诊断与安全恢复')
         self._build_export_tab()
         self._build_curve_tab()
         self._build_analysis_tab()
+        self._build_cpfem_tab()
+        self._build_safety_tab()
+        self._build_app_menu()
+        self._snapshot_ui_labels()
+        self._apply_language()
+        for tab in (self.curve_tab, self.analysis_tab, self.cpfem_tab, self.safety_tab):
+            self.nb.hide(tab)
         self.after(100, self._drain_queue)
+
+    def _build_app_menu(self):
+        # Rebuild the Tk native menu on language changes; callbacks remain unchanged.
+        old = getattr(self, 'app_menu', None)
+        bar = tk.Menu(self)
+        edit = tk.Menu(bar, tearoff=False)
+        edit.add_command(label=translate('曲线数据 / Curve Data', self.lang), command=lambda: self.open_work_page(self.curve_tab))
+        edit.add_command(label=translate('场变量分析 / Field Analysis', self.lang), command=lambda: self.open_work_page(self.analysis_tab))
+        edit.add_separator()
+        edit.add_command(label=translate('摩擦 CPFEM 后处理 / History & PEEQCP', self.lang), command=lambda: self.open_work_page(self.cpfem_tab))
+        bar.add_cascade(label=translate('编辑 / Edit', self.lang), menu=edit)
+        tools = tk.Menu(bar, tearoff=False)
+        tools.add_command(label=translate('诊断与安全恢复 / Audit & Safe Recovery', self.lang), command=lambda: self.open_work_page(self.safety_tab))
+        bar.add_cascade(label=translate('工具 / Tools', self.lang), menu=tools)
+        view = tk.Menu(bar, tearoff=False)
+        view.add_command(label=translate('返回导出 / Export', self.lang), command=lambda: self.open_work_page(self.export_tab))
+        bar.add_cascade(label=translate('视图 / View', self.lang), menu=view)
+        self.config(menu=bar)
+        self.app_menu = bar
+        if old is not None:
+            old.destroy()
+
+    def _snapshot_ui_labels(self):
+        # Snapshot immutable source text. Do not overwrite widget data-bound variables.
+        def visit(widget):
+            try:
+                text = widget.cget('text')
+                if isinstance(text, str) and text:
+                    self._lang_widgets.append((widget, text))
+            except (tk.TclError, AttributeError):
+                pass
+            for child in widget.winfo_children():
+                visit(child)
+        visit(self)
+        self._tab_source_labels = {
+            tab: self.nb.tab(tab, 'text')
+            for tab in (self.export_tab, self.curve_tab, self.analysis_tab,
+                        self.cpfem_tab, self.safety_tab)
+        }
+
+    def _apply_language(self):
+        for widget, original in self._lang_widgets:
+            try: widget.configure(text=translate(original, self.lang))
+            except tk.TclError: pass
+        for tab, original in self._tab_source_labels.items():
+            self.nb.tab(tab, text=translate(original, self.lang))
+        self._build_app_menu()
+        self.title('ODB2VTU-S 统一工作台 v0.2.1 — Linux' if self.lang == 'zh'
+                   else 'ODB2VTU-S Workbench v0.2.1 — Linux')
+        if getattr(self, 'language_var', None) is not None:
+            self.language_var.set('中文' if self.lang == 'zh' else 'English')
+        # Display-only combobox text; backend uses stable selected indices.
+        options = (
+            (self.gnd_mode_cb, ('仅18滑移系',), ('18 slip systems only',)),
+            (self.gnd_slide_ref_cb, ('滑动第一帧','滑动前一步最后帧'),
+                                     ('First sliding frame','Last frame of preceding step')),
+            (self.frame_policy_cb, ('合并／保留既有帧','同步当前所选帧'),
+                                   ('Merge / preserve existing frames','Sync selected frames')),
+            (self.field_policy_cb, ('合并／保留已有字段','同步当前所选字段'),
+                                   ('Merge / preserve existing fields','Sync selected fields')),
+            (self.compatibility_mode_cb, ('标准增量（已有 Manifest）','快速兼容（推荐）','严格验证（逐帧核对数值）'),
+                                         ('Standard incremental','Fast compatible (recommended)','Strict numeric verification')),
+        )
+        for widget, chinese, english in options:
+            index = widget.current()
+            widget.configure(values=chinese if self.lang == 'zh' else english)
+            widget.current(max(index, 0))
+        if self.cpfem_status.get() in ('Waiting / 等待操作','等待操作','Waiting'):
+            self.cpfem_status.set(translate('Waiting / 等待操作', self.lang))
+
+    def _m(self, chinese, english):
+        return chinese if self.lang == 'zh' else english
+
+    def _change_language(self, _event=None):
+        selected = self.language_var.get()
+        lang = 'en' if selected == 'English' else 'zh'
+        if lang != self.lang:
+            self.lang = lang
+            self._apply_language()
+
+    def open_work_page(self, tab):
+        self.nb.add(tab)
+        self.nb.select(tab)
+
+    def _build_cpfem_tab(self):
+        parent = self.cpfem_tab
+        f = ttk.Frame(parent, padding=14)
+        f.pack(fill='both', expand=True)
+        self.cpfem_odb = tk.StringVar()
+        self.cpfem_out = tk.StringVar()
+        self.cpfem_status = tk.StringVar(value='Waiting / 等待操作')
+        r = ttk.Frame(f); r.pack(fill='x', pady=4)
+        ttk.Label(r, text='摩擦 ODB / Source ODB', width=24).pack(side='left')
+        ttk.Entry(r, textvariable=self.cpfem_odb).pack(side='left', fill='x', expand=True)
+        ttk.Button(r, text='浏览...', command=self._cpfem_pick).pack(side='left', padx=5)
+        r = ttk.Frame(f); r.pack(fill='x', pady=4)
+        ttk.Label(r, text='输出文件夹 / Output root', width=24).pack(side='left')
+        ttk.Entry(r, textvariable=self.cpfem_out).pack(side='left', fill='x', expand=True)
+        ttk.Button(r, text='浏览...', command=self._cpfem_pick_out).pack(side='left', padx=5)
+        ttk.Label(f, text='逐帧累积 PEEQCP，目标帧按各摩擦循环的 T0/T25/T50/T75/T100 选取。', wraplength=760).pack(anchor='w', pady=9)
+        buttons=ttk.Frame(f); buttons.pack(fill='x', pady=6)
+        actions=[('② 计算 PEEQCP', 'peeq_export'),('③ 写回 PEEQCP 到 ODB', 'peeq_inject'),('④ 检查 PEEQCP', 'peeq_check')]
+        for i,(label,op) in enumerate(actions):
+            ttk.Button(buttons, text=label, command=lambda op=op:self._cpfem_run(op)).grid(row=i//2,column=i%2,sticky='ew',padx=4,pady=4)
+        buttons.columnconfigure(0, weight=1); buttons.columnconfigure(1, weight=1)
+        ttk.Label(f,textvariable=self.cpfem_status).pack(anchor='w',pady=5)
+        self.cpfem_log = tk.Text(f, height=14, wrap='none'); self.cpfem_log.pack(fill='both',expand=True)
+
+    def curve_export_friction(self):
+        # Existing, proven friction History exporter; one GUI entry under Curve Data.
+        odb = self.curve_odb.get() or self.odb_var.get()
+        if not odb or not Path(odb).is_file():
+            messagebox.showerror('曲线数据' if self.lang == 'zh' else 'Curve Data',
+                                 '请先选择有效 ODB' if self.lang == 'zh' else 'Select a valid ODB first')
+            return
+        if not CPFEM_MASTER_PY.is_file():
+            messagebox.showerror('CPFEM', '缺少历史曲线后端' if self.lang == 'zh' else 'History backend is missing')
+            return
+        out = self.cpfem_out.get() or str(Path(odb).parent)
+        self.run_backend([CPFEM_MASTER_PY, '--operation','history','--odb',odb,'--outroot',out],
+                         self.curve_log, None, '导出摩擦专用曲线' if self.lang == 'zh' else 'Export friction curves')
+
+    def _cpfem_pick(self):
+        p=filedialog.askopenfilename(filetypes=[('ODB','*.odb')])
+        if p:self.cpfem_odb.set(p);self.cpfem_out.set(self.cpfem_out.get() or str(Path(p).parent))
+
+    def _cpfem_pick_out(self):
+        p=filedialog.askdirectory()
+        if p:self.cpfem_out.set(p)
+
+    def _cpfem_run(self, op):
+        odb=self.cpfem_odb.get() or self.odb_var.get()
+        out=self.cpfem_out.get() or (str(Path(odb).parent) if odb else '')
+        if not odb or not Path(odb).is_file() or not out:
+            messagebox.showerror('CPFEM',self._m('请选择有效 ODB 和输出目录','Select a valid ODB and output directory'));return
+        if not CPFEM_MASTER_PY.is_file():
+            messagebox.showerror('CPFEM',self._m('缺少 CPFEM 后端: abaqus_postprocess_master.py','Missing CPFEM backend: abaqus_postprocess_master.py'));return
+        if op=='peeq_inject' and not messagebox.askyesno(self._m('危险：写回确认','Danger: ODB Write-back'),self._m('此操作会修改 ODB！请先备份 ODB 并关闭查看器。确认继续？','This modifies the ODB. Back it up and close all viewers. Continue?')):
+            return
+        self.cpfem_odb.set(odb);self.cpfem_out.set(out)
+        def done(rc):
+            self.cpfem_status.set(self._m('已完成','Completed') if rc==0 else self._m('失败 rc=%s','FAILED rc=%s')%rc)
+            if rc != 0:messagebox.showerror('CPFEM',self._m('操作失败；请查看日志，返回码 %s','Operation failed. See log. Exit code %s')%rc)
+            elif op=='peeq_inject':messagebox.showinfo('CPFEM',self._m('写回完成，请重新打开 ODB 验证','Write-back complete; reopen the ODB to verify'))
+        self.cpfem_status.set(self._m('正在执行：','Running: ')+op)
+        self.run_backend([CPFEM_MASTER_PY,'--operation',op,'--odb',odb,'--outroot',out],self.cpfem_log,done,'CPFEM '+op)
+
+    def _build_safety_tab(self):
+        parent=self.safety_tab
+        f=ttk.Frame(parent,padding=14);f.pack(fill='both',expand=True)
+        self.safety_pvd=tk.StringVar()
+        self.safety_fields=tk.StringVar(value='U,UR,SDV27,SDV49')
+        self.safety_confirm=tk.BooleanVar(value=False)
+        ttk.Label(f,text='数据诊断与安全恢复 / Non-destructive Audit & Recovery',font=('',13,'bold')).pack(anchor='w',pady=(0,10))
+        r=ttk.Frame(f);r.pack(fill='x',pady=4)
+        ttk.Label(r,text='PVD 文件',width=16).pack(side='left')
+        ttk.Entry(r,textvariable=self.safety_pvd).pack(side='left',fill='x',expand=True)
+        ttk.Button(r,text='浏览...',command=self._safety_pick).pack(side='left',padx=5)
+        ttk.Button(f,text='1. 全量只读诊断（无需 ODB） / Full Audit',command=self._safety_audit).pack(anchor='w',pady=(8,15))
+        ttk.Label(f,text='从 ODB 补充的原生字段 / Missing native fields (comma separated)').pack(anchor='w')
+        ttk.Entry(f,textvariable=self.safety_fields).pack(fill='x',pady=5)
+        r=ttk.Frame(f);r.pack(fill='x',pady=8)
+        ttk.Button(r,text='2. ODB 预检查 / CHECK ONLY',command=lambda:self._safety_recovery('check')).pack(side='left',padx=5)
+        ttk.Button(r,text='3. 安全恢复到新目录 / RESTORE',command=lambda:self._safety_recovery('restore')).pack(side='left',padx=5)
+        ttk.Checkbutton(f,text='已备份并完成预检查；只在全新恢复目录写入 / Confirmed backup and precheck',variable=self.safety_confirm).pack(anchor='w',pady=7)
+        ttk.Label(f,text='原 ODB/VTU/PVD/Manifest 均保持只读，恢复结果写入 RECOVERED_SAFE；不得直接替换原目录。',wraplength=850,foreground='#a22').pack(anchor='w',pady=5)
+        sep=ttk.Separator(f,orient='horizontal');sep.pack(fill='x',pady=12)
+        ttk.Label(f,text='旧版无 Manifest 的 PVD/VTU 迁移 / Legacy baseline migration',font=('',11,'bold')).pack(anchor='w')
+        ttk.Label(f,text='需先在导出页面选好原始 ODB、实例和单元集。逐帧验证网格和原生场数值，然后复制到新 MIGRATED_SAFE 目录。',wraplength=850).pack(anchor='w',pady=4)
+        r=ttk.Frame(f);r.pack(fill='x',pady=6)
+        ttk.Button(r,text='4. 旧版只读预检查 / Legacy CHECK',command=lambda:self._legacy_migration('check')).pack(side='left',padx=5)
+        ttk.Button(r,text='5. 迁移至新目录 / Legacy MIGRATE',command=lambda:self._legacy_migration('migrate')).pack(side='left',padx=5)
+        self.safety_log=tk.Text(f,height=9,wrap='none');self.safety_log.pack(fill='both',expand=True,pady=7)
+
+    def _safety_pick(self):
+        p=filedialog.askopenfilename(filetypes=[('PVD','*.pvd')])
+        if p:self.safety_pvd.set(p)
+
+    def _safety_valid(self):
+        p=self.safety_pvd.get()
+        if not p.lower().endswith('.pvd') or not Path(p).is_file():
+            messagebox.showerror(self._m('数据安全','Data Safety'),self._m('请选择存在的 PVD 文件','Select an existing PVD file'));return False
+        return True
+
+    def _safety_audit(self):
+        if not self._safety_valid():return
+        if self.running:
+            messagebox.showwarning(self._m('忙碌','Busy'),self._m('请等待当前任务结束','Wait for the current task to finish'));return
+        cmd=[sys.executable,str(AUDIT_PY),self.safety_pvd.get(),'--max-scan','999999','--report',str(WORK_DIR/'ODB2VTUS_full_audit.json')]
+        self._run_system_task(cmd,self.safety_log,'Read-only audit')
+
+    def _run_system_task(self,cmd,log,title):
+        self.running=True;self.status_var.set(title)
+        log.insert('end','$ '+' '.join(shlex.quote(str(x)) for x in cmd)+'\n')
+        def worker():
+            rc=-1
+            try:
+                p=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,universal_newlines=True,bufsize=1)
+                for line in p.stdout:self.proc_queue.put(('log',log,line))
+                rc=p.wait()
+            except Exception as ex:self.proc_queue.put(('log',log,'ERROR: %s\n'%ex))
+            self.proc_queue.put(('done',None,rc))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _safety_recovery(self,mode):
+        if not self._safety_valid():return
+        import re
+        fields=self.safety_fields.get().strip()
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(,[A-Za-z][A-Za-z0-9_]*)*',fields):
+            messagebox.showerror(self._m('数据安全','Data Safety'),self._m('仅支持逗号分隔的原生变量名，如 U,UR,SDV27,SDV49','Comma-separated native field names only, e.g. U,UR,SDV27,SDV49'));return
+        if mode=='restore' and (not self.safety_confirm.get() or not messagebox.askyesno(self._m('确认安全恢复','Confirm recovery'),self._m('确认已备份且预检查成功？只向独立 RECOVERED_SAFE 目录写入，不修改原始结果。','Backed up and passed CHECK ONLY? Writes only to a new RECOVERED_SAFE folder.'))):
+            return
+        if not RECOVERY_PY.exists():messagebox.showerror(self._m('数据安全','Data Safety'),self._m('恢复后端缺失','Recovery backend is missing'));return
+        self.run_backend([RECOVERY_PY,'--mode',mode,'--pvd',self.safety_pvd.get(),'--fields',fields],self.safety_log,None,'Safe recovery '+mode)
+
+    def _legacy_migration(self,mode):
+        if not self._safety_valid():return
+        odb=self.odb_var.get()
+        inst=self.instance_cb.get()
+        if not Path(odb).is_file() or not inst:
+            messagebox.showerror(self._m('旧版迁移','Legacy Migration'),self._m('请在导出页先选原 ODB 并读取实例。','Select the original ODB and instance in Export first.'));return
+        if mode=='migrate' and (not self.safety_confirm.get() or not messagebox.askyesno(
+            self._m('确认无损迁移','Confirm safe migration'),
+            self._m('预检查是否已通过？将完整复制原始结果至独立 MIGRATED_SAFE 目录，原文件不变。',
+                    'Has precheck passed? Copy all VTUs to a separate MIGRATED_SAFE folder?'))):
+            return
+        args=[LEGACY_PY,'--mode',mode,'--odb',odb,'--instance',inst,'--pvd',self.safety_pvd.get()]
+        region=self.set_cb.get()
+        if region and region != WHOLE:
+            args += ['--element-set','__ALL_GRAINS__' if region == ALL_GRAINS else region]
+        if self.bbox_var.get().strip():args += ['--bbox',self.bbox_var.get().strip()]
+        self.run_backend(args,self.safety_log,None,'Legacy migration '+mode)
 
     def _style(self):
         s = ttk.Style(self)
@@ -165,6 +416,13 @@ class App(tk.Tk):
         ttk.Entry(f, textvariable=self.abaqus_cmd, width=22).pack(side='left', padx=(5,12))
         ttk.Button(f, text='检查环境', command=self.check_env).pack(side='left')
         ttk.Label(f, text='  例如: abaqus / abq2024 / /opt/.../abaqus').pack(side='left', padx=8)
+        self.language_var = tk.StringVar(value='中文')
+        self.language_cb = ttk.Combobox(f, textvariable=self.language_var, state='readonly',
+                                        values=('中文', 'English'), width=10)
+        self.language_cb.pack(side='right', padx=(6,4))
+        self.language_cb.bind('<<ComboboxSelected>>', self._change_language)
+        ttk.Label(f, text='语言 / Language').pack(side='right')
+
 
     def _build_export_tab(self):
         root = self.export_tab
@@ -280,6 +538,15 @@ class App(tk.Tk):
             pr1,textvariable=self.field_policy_var,state='readonly',width=36,
             values=['合并/保留既有变量 / Merge','同步当前变量 / Sync'])
         self.field_policy_cb.pack(side='left',padx=6)
+        cr=ttk.Frame(policy); cr.pack(fill='x',pady=(7,0))
+        ttk.Label(cr,text='旧版数据兼容模式 / Compatibility').pack(side='left')
+        self.compatibility_mode_cb=ttk.Combobox(
+            cr,textvariable=self.compatibility_mode_var,state='readonly',width=42,
+            values=['标准增量（已有 Manifest）','快速兼容（推荐）','严格验证（逐帧核对数值）'])
+        self.compatibility_mode_cb.pack(side='left',padx=6)
+        self.compatibility_mode_cb.current(1)
+        ttk.Label(policy,text='无 Manifest 时自动核验并在新 MIGRATED_SAFE 目录增量更新，原文件不变。',
+                  foreground='#555').pack(anchor='w',pady=(3,0))
         pr2=ttk.Frame(policy); pr2.pack(fill='x',pady=(5,0))
         ttk.Checkbutton(
             pr2,text='同步帧时同时删除已移除帧的 VTU / Delete removed-frame VTU files',
@@ -312,7 +579,7 @@ class App(tk.Tk):
         for _v in (self.series_var,self.mises_var,self.ipf_var,self.ipf_dir,self.bbox_var,
                    self.delta_var,self.delta_field,self.gnd_diff_var,self.gnd_mode_var,
                    self.gnd_slide_diff_var,self.gnd_slide_ref_var,self.output_file,
-                   self.frame_policy_var,self.field_policy_var,self.cleanup_removed_var):
+                   self.frame_policy_var,self.field_policy_var,self.compatibility_mode_var,self.cleanup_removed_var):
             try: _v.trace_add('write', lambda *_: self.update_export_summary())
             except Exception: pass
         self.after_idle(self.update_export_summary)
@@ -366,6 +633,7 @@ class App(tk.Tk):
         ttk.Entry(rr2,textvariable=self.curve_out).pack(side='left',fill='x',expand=True)
         ttk.Button(rr2,text='...',width=4,command=self.curve_choose_file).pack(side='left',padx=5)
         ttk.Button(out,text='导出 CSV',command=self.curve_export).pack(anchor='w')
+        ttk.Button(out,text='导出摩擦专用 CSV（ALL / NORMAL / TANGENTIAL / DIAGNOSTIC）',command=self.curve_export_friction).pack(anchor='w',pady=4)
         self.curve_log=tk.Text(right,wrap='none'); self.curve_log.pack(fill='both',expand=True)
 
     # ---------------- Analysis tab ----------------
@@ -411,7 +679,7 @@ class App(tk.Tk):
 
     def run_backend(self, args, log_widget, callback=None, title='Running'):
         if self.running:
-            messagebox.showinfo('Busy','已有后台任务正在运行。')
+            messagebox.showinfo(self._m('忙碌','Busy'),self._m('已有后台任务正在运行。','A backend task is already running.'))
             return
         self.running=True
         full=self.abaqus_prefix()+[str(x) for x in args]
@@ -444,7 +712,7 @@ class App(tk.Tk):
                 elif item[0]=='done':
                     self.running=False
                     cb,rc=item[1],item[2]
-                    self.status_var.set('Completed' if rc==0 else 'Failed (rc=%s)'%rc)
+                    self.status_var.set(self._m('已完成','Completed') if rc==0 else self._m('失败（返回码 %s）','Failed (rc=%s)')%rc)
                     if cb:
                         try: cb(rc)
                         except Exception as exc: messagebox.showerror('Error',str(exc))
@@ -613,6 +881,7 @@ class App(tk.Tk):
         lines.append('Derived  : %s' % (', '.join(derived) if derived else '<none>'))
         lines.append('Frame policy : %s' % self.frame_policy_var.get())
         lines.append('Field policy : %s' % self.field_policy_var.get())
+        lines.append('Compatibility : %s' % self.compatibility_mode_var.get())
         if self.cleanup_removed_var.get():
             lines.append('Cleanup      : delete VTU files removed by frame sync')
         if self.bbox_var.get().strip(): lines.append('BBox     : %s' % self.bbox_var.get().strip())
@@ -649,10 +918,27 @@ class App(tk.Tk):
         if not fs and not self.mises_var.get() and not self.ipf_var.get() and not self.delta_var.get() and not self.gnd_diff_var.get() and not self.gnd_slide_diff_var.get():messagebox.showerror('Export','请选择场变量或派生场');return
         if self.ipf_var.get() and not Path(self.inp_var.get()).exists():messagebox.showerror('IPF','Initial IPF需要有效INP');return
         if self.gnd_diff_var.get() and not Path(self.gnd_dat_var.get()).exists():messagebox.showerror('GND','GND差值需要有效的 gnd_field.dat');return
-        field_policy='sync' if 'Sync' in self.field_policy_var.get() else 'merge'
-        frame_policy='sync' if 'Sync' in self.frame_policy_var.get() else 'merge'
+        field_policy='sync' if self.field_policy_cb.current() == 1 else 'merge'
+        frame_policy='sync' if self.frame_policy_cb.current() == 1 else 'merge'
+        # Require informed confirmation before any Sync operation.
+        if self.series_var.get() and frame_policy == 'sync':
+            if not messagebox.askyesno('确认 Frame Sync',
+                    'Frame Sync 将从 PVD 时间序列中移除所有未选的旧帧。\n'
+                    '只补充 SDV 时，应选择 Frame Merge。是否继续？', icon='warning'):
+                return
+        if field_policy == 'sync':
+            if not messagebox.askyesno('确认 Field Sync',
+                    'Field Sync 会从选中帧中删除本次未选择的已有 SDV、GND 和 IPF 字段。\n'
+                    '只补充 SDV 时，应选择 Field Merge。是否继续？', icon='warning'):
+                return
+        if self.series_var.get() and self.cleanup_removed_var.get():
+            if not messagebox.askyesno('确认永久删除文件',
+                    '危险：此选项会物理删除不在 Frame Sync 选择中的 VTU 文件。\n'
+                    '删除无法通过 PVD 恢复。是否确认？', icon='warning'):
+                return
         common=['--odb',self.odb_var.get(),'--instance',self.instance_cb.get(),'--fields',','.join(fs),
-                '--field-policy',field_policy]
+                '--field-policy',field_policy,
+                '--confirm-field-sync', '1' if field_policy == 'sync' else '0']
         sv=self.set_cb.get()
         if sv and sv!=WHOLE: common += ['--element-set','__ALL_GRAINS__' if sv==ALL_GRAINS else sv]
         if self.bbox_var.get().strip():common += ['--bbox',self.bbox_var.get().strip()]
@@ -660,18 +946,43 @@ class App(tk.Tk):
         if self.mises_var.get():common += ['--mises','1']
         if self.ipf_var.get():common += ['--initial-ipf','1','--inp',self.inp_var.get(),'--ipf-dir',self.ipf_dir.get()]
         if self.gnd_diff_var.get():
-            gm={'仅18滑移系 / 18 slips only':'slips'}.get(self.gnd_mode_var.get(),'slips')
+            gm='slips'
             common += ['--gnd-diff','1','--gnd-dat',self.gnd_dat_var.get(),'--gnd-diff-mode',gm]
         if self.gnd_slide_diff_var.get():
-            sr={'滑动第一帧 / First sliding frame':'sliding0','滑动前一步最后帧 / Previous-step last frame':'previous_last'}.get(self.gnd_slide_ref_var.get(),'sliding0')
+            sr='previous_last' if self.gnd_slide_ref_cb.current() == 1 else 'sliding0'
             common += ['--gnd-slide-diff','1','--gnd-slide-ref',sr]
         if self.series_var.get():
             if not self.selected_states:messagebox.showerror('Series','请添加Step/Frame状态');return
+            compatibility_mode = ('standard', 'fast', 'strict')[max(0, self.compatibility_mode_cb.current())]
+            adoption=[]
+            output = Path(self.output_file.get())
+            effective_output=output
+            target_manifest = output.parent / (output.stem+'_frames') / '_ODB2VTUS_manifest.json'
+            missing_manifest = output.is_file() and not target_manifest.is_file()
+            if missing_manifest and compatibility_mode == 'standard':
+                title = self._m('需要原始 Manifest','Original Manifest required')
+                messagebox.showinfo(title, self._m(
+                    '标准模式需要可信 Manifest。如早期版本从未生成过，请取消并选择快速兼容模式。',
+                    'Standard mode requires a trusted Manifest. Choose Fast compatibility if no original Manifest exists.'))
+                selected = filedialog.askopenfilename(title=title, filetypes=[('Manifest JSON','*.json')])
+                if not selected:return
+                adoption=['--adopt-manifest-path',selected]
+            if missing_manifest and compatibility_mode != 'standard':
+                effective_output = output.parent / (output.stem + '_MIGRATED_SAFE') / output.name
+                if frame_policy != 'merge' or field_policy != 'merge' or self.cleanup_removed_var.get():
+                    messagebox.showerror('Compatibility','旧版安全迁移只允许 Frame Merge + Field Merge 且不允许删除文件。')
+                    return
+                if not messagebox.askyesno('Legacy compatibility',self._m(
+                        '无 Manifest 的旧数据将先校验并完整复制到新的 MIGRATED_SAFE 文件夹，然后仅在新目录追加字段。原数据不改变。继续？',
+                        'Legacy data without Manifest will be checked and independently copied to a NEW MIGRATED_SAFE folder before increment. Original files stay unchanged. Continue?'), icon='warning'):
+                    return
             SERIES_FILE.write_text('\n'.join('%s\t%d'%x for x in self.selected_states)+'\n',encoding='utf-8-sig')
             args=[SERIES_PY]+common+[
                 '--selection-file',SERIES_FILE,'--out-pvd',self.output_file.get(),
-                '--frame-policy',frame_policy,
-                '--cleanup-removed-frames','1' if self.cleanup_removed_var.get() else '0']
+                '--frame-policy',frame_policy, '--compatibility-mode',compatibility_mode,
+                '--cleanup-removed-frames','1' if self.cleanup_removed_var.get() else '0',
+                '--confirm-frame-sync', '1' if frame_policy == 'sync' else '0',
+                '--confirm-delete-files', '1' if self.cleanup_removed_var.get() else '0'] + adoption
         else:
             if not self.step_cb.get() or not self.frame_cb.get():return
             args=[EXPORT_PY]+common+['--step',self.step_cb.get(),'--frame',self.frame_cb.get(),'--out',self.output_file.get()]
@@ -679,11 +990,11 @@ class App(tk.Tk):
         def done(rc):
             if rc==0:
                 self.log.insert('end','\n[GUI] EXPORT COMPLETE\n')
-                self.log.insert('end','Output: %s\n' % self.output_file.get())
+                self.log.insert('end','Output: %s\n' % effective_output)
                 self.log.see('end')
                 messagebox.showinfo(
                     '导出完成 / Export Complete',
-                    'ODB2VTU-S 导出完成。\n\n输出文件：\n%s' % self.output_file.get()
+                    'ODB2VTU-S 导出完成。\n\n输出文件：\n%s' % effective_output
                 )
             else:
                 self.log.insert('end','\n[GUI] EXPORT FAILED (return code %s)\n' % rc)

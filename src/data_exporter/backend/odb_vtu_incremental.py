@@ -91,24 +91,72 @@ def _mapping(path):
         raise
 
 
-def _compare_geometry(old, delta):
-    """Assert point coordinates, cell connectivity, offsets and types match.
+def _numbers_in_section(mapping, section, name=None):
+    """Read one geometry array by meaning, independent of ASCII formatting."""
+    import numpy as np
+    _, start, limit, _ = _find_section(mapping, section)
+    pos = start
+    while True:
+        hstart = mapping.find(b'<DataArray', pos, limit)
+        if hstart < 0: break
+        hend = mapping.find(b'>', hstart, limit)
+        if hend < 0: raise RuntimeError('Unterminated geometry array header in ' + section)
+        header = mapping[hstart:hend + 1]
+        close = mapping.find(b'</DataArray>', hend + 1, limit)
+        if close < 0: raise RuntimeError('Unterminated geometry array in ' + section)
+        m = _NAME.search(header)
+        found = m.group(1).decode('utf-8') if m else None
+        if name is None or name == found:
+            if b'format="ascii"' not in header:
+                raise RuntimeError('Legacy geometry uses unsupported VTU encoding')
+            values = np.fromstring(mapping[hend + 1:close], dtype=np.float64, sep=' ')
+            if values.size == 0: raise RuntimeError('Empty geometry array: ' + section)
+            return values
+        pos = close + len(b'</DataArray>')
+    raise RuntimeError('Missing geometry array %s in %s' % (name, section))
 
-    The exporter emits identical geometry for an unchanged ODB/instance/region.
-    Exact comparison is intentional: any mismatch forces a safe full export.
-    """
-    old_point_start = _find_section(old, "PointData")[0]
-    new_point_start = _find_section(delta, "PointData")[0]
-    if _count_elements(old) != _count_elements(delta):
-        raise RuntimeError("VTU geometry Piece counts differ")
-    if old_point_start != new_point_start:
-        raise RuntimeError("VTU geometry block sizes differ")
-    i = 0
-    while i < old_point_start:
-        j = min(i + _BLOCK_SIZE, old_point_start)
-        if old[i:j] != delta[i:j]:
-            raise RuntimeError("VTU points/cells differ; cannot reuse old arrays")
-        i = j
+
+def _semantic_geometry_compatible(old, delta):
+    """Require numerically identical point ordering and exact cell topology."""
+    import numpy as np
+    def piece_counts(mm):
+        header = _count_elements(mm)
+        out = []
+        for key in (b'NumberOfPoints', b'NumberOfCells'):
+            m = re.search(key + br'="(\d+)"', header)
+            if not m: raise RuntimeError('Missing Piece geometry count')
+            out.append(int(m.group(1)))
+        return out
+    ca, cb = piece_counts(old), piece_counts(delta)
+    if ca != cb: raise RuntimeError('VTU Piece point/cell counts differ')
+    a = _numbers_in_section(old, 'Points')
+    b = _numbers_in_section(delta, 'Points')
+    if len(a) != len(b) or len(a) != ca[0] * 3:
+        raise RuntimeError('VTU point coordinate count differs')
+    if not np.allclose(a, b, rtol=1e-11, atol=1e-9, equal_nan=False):
+        raise RuntimeError('VTU geometry point coordinates differ')
+    for key in ('connectivity', 'offsets', 'types'):
+        a = _numbers_in_section(old, 'Cells', key)
+        b = _numbers_in_section(delta, 'Cells', key)
+        if a.size != b.size or not np.array_equal(a, b):
+            raise RuntimeError('VTU cell %s differs' % key)
+
+
+def _compare_geometry(old, delta):
+    """Fast byte comparison, otherwise semantic geometry verification."""
+    old_start = _find_section(old, 'PointData')[0]
+    new_start = _find_section(delta, 'PointData')[0]
+    if old_start == new_start and _count_elements(old) == _count_elements(delta):
+        identical = True
+        i = 0
+        while i < old_start:
+            j = min(i + _BLOCK_SIZE, old_start)
+            if old[i:j] != delta[i:j]:
+                identical = False
+                break
+            i = j
+        if identical: return
+    _semantic_geometry_compatible(old, delta)
 
 
 def vtu_arrays(path):
@@ -148,7 +196,7 @@ def expected_derived(spec):
     return groups
 
 
-def patch_spec(old_spec, final_spec, present_arrays):
+def patch_spec(old_spec, final_spec, present_arrays, preserve_existing=False):
     """Return (patch_spec, final_array_names, has_work).
 
     Patch only newly requested or missing raw fields and altered derived groups.
@@ -167,6 +215,10 @@ def patch_spec(old_spec, final_spec, present_arrays):
         if old.get(key) != final.get(key) or not names.issubset(present_arrays):
             patch[key] = final[key]
     keep = selected | set(["GrainID"])
+    # Field Merge is non-destructive even when legacy/manifest field metadata
+    # is incomplete. The *actual* old VTU arrays are authoritative.
+    if preserve_existing:
+        keep.update(present_arrays)
     for names in derived.values():
         keep.update(names)
     has_work = bool(need_native) or any(

@@ -1,7 +1,12 @@
 {
-  "name": "ODB2VTU-S Exporter",
-  "display_name_zh": "ODB2VTU-S 数据导出器",
-  "description": "Selective large-Abaqus-ODB field/history exporter for ParaView, arbitrary stored-frame comparison, and CPFEM-oriented analysis.",
+  "name": "ODB2VTU-S Workbench",
+  "default_language": "zh-CN",
+  "available_languages": [
+    "zh-CN",
+    "en"
+  ],
+  "display_name_zh": "ODB2VTU-S 统一工作台",
+  "description": "Unified selective ODB->VTU/PVD conversion, field and curve analysis, CPFEM friction postprocessing, read-only audit and safe recovery.",
   "requires": [
     "Windows",
     "Abaqus with odbAccess",
@@ -13,8 +18,13 @@
     "behavior": "Automatically created next to the selected ODB."
   },
   "features_added": [
-    "Mises Stress derived field",
-    "Initial IPF from grain materials in INP",
-    "Field Extremum and Grain Correlation Analysis"
-  ]
+    "Frame/Field Merge & Sync safe guards",
+    "Tools: read-only full VTU audit and safe native field recovery",
+    "Edit: curves, field analysis and integrated CPFEM friction/PEEQCP",
+    "Tools: verified legacy PVD/VTU migration without an original manifest (optional in-place legacy adoption)",
+    "Series export legacy compatibility: Standard / Fast (default) / Strict; optional same-directory atomic in-place update or safe migration",
+    "Windows PowerShell 5.1 UTF-8 BOM + fail-fast AST parse check at GUI startup",
+    "PVD-authoritative inventory: preserve all unreferenced VTUs without ambiguous-frame abort"
+  ],
+  "version": "0.2.1"
 }

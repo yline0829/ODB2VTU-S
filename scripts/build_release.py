@@ -1,61 +1,35 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import shutil, zipfile
-ROOT = Path(__file__).resolve().parents[1]
-DIST = ROOT / 'dist'
-DIST.mkdir(exist_ok=True)
-VERSION = (ROOT/'VERSION').read_text().strip()
-
-def reset(path):
-    if path.exists(): shutil.rmtree(path)
-    path.mkdir(parents=True)
-
-def zipdir(src, dst):
-    if dst.exists(): dst.unlink()
-    with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as z:
+ROOT=Path(__file__).resolve().parents[1]
+VERSION=(ROOT/'VERSION').read_text().strip()
+DIST=ROOT/'dist';DIST.mkdir(exist_ok=True)
+for ps in (ROOT/'src/data_exporter/windows').glob('*.ps1'):
+    b=ps.read_bytes()
+    if not b.startswith(b'\xef\xbb\xbf'):
+        raise RuntimeError('Missing UTF-8 BOM: '+str(ps))
+WORK=ROOT/'.build'
+if WORK.exists():shutil.rmtree(WORK)
+WORK.mkdir()
+def cp(src,dst):
+    shutil.copytree(src,dst,dirs_exist_ok=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+def zipout(src,name):
+    with zipfile.ZipFile(DIST/name,'w',zipfile.ZIP_DEFLATED) as z:
         for p in sorted(src.rglob('*')):
-            if p.is_file(): z.write(p, p.relative_to(src).as_posix())
-
-def cp_tree(src, dst): shutil.copytree(src, dst, dirs_exist_ok=True)
-
-work = ROOT/'.build'
-if work.exists(): shutil.rmtree(work)
-work.mkdir()
-
-# Windows Data Exporter
-wde = work/'ODB2VTU-S_Exporter_Windows_Portable'
-reset(wde)
-cp_tree(ROOT/'src/data_exporter/windows', wde)
-cp_tree(ROOT/'src/data_exporter/backend', wde)
-cp_tree(ROOT/'assets/icons', wde/'icons')
-zipdir(wde, DIST/f'ODB2VTU-S_Exporter_Windows_Portable_v{VERSION}.zip')
-
-# Windows Postprocess
-wpp = work/'ODB2VTU-S_CPFEM_Postprocessor_Windows_Portable'
-reset(wpp)
-cp_tree(ROOT/'src/postprocess/windows', wpp)
-cp_tree(ROOT/'src/postprocess/backend', wpp)
-cp_tree(ROOT/'assets/icons', wpp/'icons')
-zipdir(wpp, DIST/f'ODB2VTU-S_CPFEM_Postprocessor_Windows_Portable_v{VERSION}.zip')
-
-# Linux combined
-lin = work/'ODB2VTU-S_Linux_Tools'
-reset(lin)
-(lin/'ODB2VTU-S_Exporter_Linux').mkdir()
-(lin/'ODB2VTU-S_CPFEM_Postprocessor_Linux').mkdir()
-cp_tree(ROOT/'src/data_exporter/linux', lin/'ODB2VTU-S_Exporter_Linux')
-cp_tree(ROOT/'src/data_exporter/backend', lin/'ODB2VTU-S_Exporter_Linux')
-cp_tree(ROOT/'src/postprocess/linux', lin/'ODB2VTU-S_CPFEM_Postprocessor_Linux')
-cp_tree(ROOT/'src/postprocess/backend', lin/'ODB2VTU-S_CPFEM_Postprocessor_Linux')
-cp_tree(ROOT/'assets/icons', lin/'icons')
-shutil.copy2(ROOT/'packaging/linux/install_clickable.sh', lin/'install_clickable.sh')
-shutil.copy2(ROOT/'packaging/linux/uninstall_clickable.sh', lin/'uninstall_clickable.sh')
-# The combined installer in release root uses its own directory as source root.
-text = (lin/'install_clickable.sh').read_text()
-text = text.replace('SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"', 'SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"')
-text = text.replace('$SRC/src/data_exporter/linux/.', '$SRC/ODB2VTU-S_Exporter_Linux/.').replace('$SRC/src/data_exporter/backend/.', '$SRC/ODB2VTU-S_Exporter_Linux/.')
-text = text.replace('$SRC/src/postprocess/linux/.', '$SRC/ODB2VTU-S_CPFEM_Postprocessor_Linux/.').replace('$SRC/src/postprocess/backend/.', '$SRC/ODB2VTU-S_CPFEM_Postprocessor_Linux/.')
-(lin/'install_clickable.sh').write_text(text)
-(lin/'install_clickable.sh').chmod(0o755); (lin/'uninstall_clickable.sh').chmod(0o755)
-zipdir(lin, DIST/f'ODB2VTU-S_Linux_Tools_v{VERSION}.zip')
-print('Built release assets in', DIST)
+            if p.is_file():z.write(p,p.relative_to(src).as_posix())
+win=WORK/'ODB2VTU-S_Workbench_Windows_Portable';win.mkdir()
+cp(ROOT/'src/data_exporter/windows',win)
+cp(ROOT/'src/data_exporter/backend',win)
+cp(ROOT/'src/postprocess/backend',win)
+cp(ROOT/'assets/icons',win/'icons')
+zipout(win,'ODB2VTU-S_Workbench_Windows_Portable_v%s.zip'%VERSION)
+lin=WORK/'ODB2VTU-S_Workbench_Linux';lin.mkdir()
+cp(ROOT/'src/data_exporter/linux',lin)
+cp(ROOT/'src/data_exporter/backend',lin)
+cp(ROOT/'src/postprocess/backend',lin)
+shutil.copy2(ROOT/'scripts/diagnose_output_readonly.py',lin/'diagnose_output_readonly.py')
+cp(ROOT/'assets/icons',lin/'icons')
+for script in ('install_clickable.sh','uninstall_clickable.sh'):
+    shutil.copy2(ROOT/'packaging/linux'/script,lin/script)
+    (lin/script).chmod(0o755)
+zipout(lin,'ODB2VTU-S_Workbench_Linux_v%s.zip'%VERSION)

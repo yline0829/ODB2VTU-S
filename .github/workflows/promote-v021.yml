@@ -1,0 +1,62 @@
+name: Promote v0.2.1 source to main
+
+on:
+  push:
+    paths:
+      - '.github/workflows/promote-v021.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Retrieve exact maintainer-uploaded Release draft assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -H "Accept: application/octet-stream" "repos/yline0829/ODB2VTU-S/releases/assets/644510716" > /tmp/odb2vtus-windows.zip
+          gh api -H "Accept: application/octet-stream" "repos/yline0829/ODB2VTU-S/releases/assets/644510603" > /tmp/odb2vtus-linux.zip
+          echo "e255ccd2efa61c73683ea1c830f78ad84bc4857b4c3fb38ae38d3ed7a0633476  /tmp/odb2vtus-windows.zip" | sha256sum -c -
+          echo "2d7b73db8ec2f366d34db28af56474c627b54305b10b2141fd3aef66cda62405  /tmp/odb2vtus-linux.zip" | sha256sum -c -
+      - name: Overlay tested v0.2.1 modules, documentation and build tooling
+        run: python scripts/promote_v021_assets.py /tmp/odb2vtus-windows.zip /tmp/odb2vtus-linux.zip
+      - name: Compile and build v0.2.1 packages
+        run: |
+          python -m compileall -q src/data_exporter src/postprocess scripts
+          python scripts/build_release.py
+          PYTHONPATH="src/data_exporter/backend:tests" python -m unittest discover -s tests -p "test_*.py" -q
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          assert Path('VERSION').read_text().strip() == '0.2.1'
+          for name in ('ODB2VTU-S_Workbench_Windows_Portable_v0.2.1.zip','ODB2VTU-S_Workbench_Linux_v0.2.1.zip'):
+              with zipfile.ZipFile(Path('dist')/name) as z:
+                  assert z.testzip() is None
+                  assert 'odb_export_series.py' in z.namelist()
+                  assert 'odb_legacy_inplace.py' in z.namelist()
+          print('v0.2.1 package validation successful')
+          PY
+      - name: Commit updated source directly to main
+        run: |
+          git config user.name "ODB2VTU-S Release Automation"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes needed"
+          else
+            git commit -m "release: source v0.2.1 — PVD-authoritative in-place VTU updates [skip ci]"
+            git push origin HEAD:main
+          fi
+      - name: Remove obsolete rc3 test branch after main is updated
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X DELETE "repos/yline0829/ODB2VTU-S/git/refs/heads/test/v0.2.1-rc3-workbench"
+          echo "Deleted obsolete test/v0.2.1-rc3-workbench; main retained."

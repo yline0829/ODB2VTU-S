@@ -552,9 +552,10 @@ class App(tk.Tk):
             variable=self.write_mode_var,
             command=self.update_export_summary)
         self.in_place_cb.pack(anchor='w',pady=(7,0))
+        self.in_place_cb.configure(state='disabled')
         self.compat_hint = ttk.Label(
             policy,
-            text='安全复制模式：无 Manifest 的旧数据会复制到 MIGRATED_SAFE；勾选原位更新后不创建新数据目录，直接更新原 VTU。',
+            text='安全复制模式：无 Manifest 的旧数据会复制到 MIGRATED_SAFE；勾选原位更新后不创建新数据目录，直接更新原 VTU。 / Safe-copy mode creates MIGRATED_SAFE for manifest-less legacy data; in-place mode updates the original VTUs without a new data directory.',
             foreground='#555')
         self.compat_hint.pack(anchor='w',pady=(3,0))
         pr2=ttk.Frame(policy); pr2.pack(fill='x',pady=(5,0))

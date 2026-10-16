@@ -26,7 +26,9 @@ fi
 
 chmod +x "$PREFIX/launch.sh"
 
-# Keep the original v0.2.1 ODB2VTU-S Exporter icon.
+# Pin the desktop icon to the exact v0.2.0 Exporter icon.
+# Git blob SHA (v0.2.0): fbd5fb6a1048e7fb4d53267e0fbc58e4f63df239
+# SHA-256 of the PNG: eb2f9085f754221ef5774197eb3871c61eb53ee6f6bd3fc8ed33c204b2eebc00
 ICON_SRC="$PREFIX/icons/$ICON_NAME"
 if [ ! -s "$ICON_SRC" ]; then
   echo "ERROR: required icon is missing: $ICON_SRC" >&2
@@ -39,6 +41,15 @@ PNG_MAGIC="$(od -An -tx1 -N8 "$ICON_SRC" 2>/dev/null | tr -d ' \n' || true)"
 if [ "$PNG_MAGIC" != "89504e470d0a1a0a" ]; then
   echo "ERROR: icon is not a valid PNG: $ICON_SRC" >&2
   exit 3
+fi
+
+EXPECTED_ICON_SHA256="eb2f9085f754221ef5774197eb3871c61eb53ee6f6bd3fc8ed33c204b2eebc00"
+ACTUAL_ICON_SHA256="$(sha256sum "$ICON_SRC" | awk '{print $1}')"
+if [ "$ACTUAL_ICON_SHA256" != "$EXPECTED_ICON_SHA256" ]; then
+  echo "ERROR: desktop icon is not the exact v0.2.0 Exporter icon." >&2
+  echo "Expected: $EXPECTED_ICON_SHA256" >&2
+  echo "Actual  : $ACTUAL_ICON_SHA256" >&2
+  exit 5
 fi
 
 # Keep a theme copy for menus, but the desktop launcher deliberately points

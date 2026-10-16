@@ -1,60 +1,74 @@
-# ODB2VTU-S — Linux installation
+# ODB2VTU-S — Linux 安装与 Abaqus 环境
 
-The ODB2VTU-S Linux GUIs use system Python 3 + Tkinter. ODB operations run through Abaqus Python.
+ODB2VTU-S v0.2.1 Linux 版采用系统 Python 3 + Tkinter 作为 GUI，ODB 读写后端通过用户本机的 Abaqus Python 执行。
 
-## Dependencies
+## 适配环境
 
-Example for CentOS 7:
+当前提供的 Linux 安装包针对已经验证的环境：
 
-```bash
-sudo yum install -y python3-tkinter
-```
+- CentOS 7
+- SingularityCE
+- Abaqus 2024
+- Abaqus 容器：`/home/soft/abaqus2024.sif`
+- 容器内启动包装器：`/opt/run_abaqus.sh`
 
-## Abaqus command
-
-If your executable is directly available:
-
-```bash
-ABAQUS_CMD=abaqus ./launch.sh
-```
-
-or:
+默认 Abaqus 启动命令固定为：
 
 ```bash
-ABAQUS_CMD=abq2024 ./launch.sh
+singularity exec /home/soft/abaqus2024.sif /opt/run_abaqus.sh
 ```
 
-For Singularity/Apptainer installations, use the full prefix, for example:
+SingularityCE 的 `exec` 语法本身就是“容器 + 要执行的命令”，因此 ODB2VTU-S 会在这个前缀后自动追加：
+
+```text
+python <backend.py> ...
+```
+
+不需要手动加入 `cae -mesa`。citeturn2search0
+
+## 启动
+
+解压 Linux Workbench ZIP 后：
 
 ```bash
-ABAQUS_CMD='singularity exec /path/to/abaqus2024.sif /opt/run_abaqus.sh' ./launch.sh
+chmod +x install_clickable.sh
+./install_clickable.sh
 ```
 
-Do not append `cae -mesa`; the tools append `python <script>` themselves.
+安装器会：
 
-## Desktop install
+1. 安装完整统一 Workbench 到 `~/.local/share/odb2vtu-s/workbench`
+2. 安装原 ODB2VTU-S Exporter 图标
+3. 创建应用菜单项
+4. 在用户实际 Desktop 目录创建 **ODB2VTU-S Workbench** 图标
+5. 刷新用户应用数据库（系统存在 `update-desktop-database` 时）
+6. 在 GNOME/GIO 可用时标记桌面启动器为可信
 
-From the repository root:
+Linux 桌面目录通过 `xdg-user-dir DESKTOP` 获取，因此不会假定用户一定使用英文的 `~/Desktop`。citeturn3search0
+
+## 卸载
 
 ```bash
-chmod +x packaging/linux/install_clickable.sh
-./packaging/linux/install_clickable.sh
+./uninstall_clickable.sh
 ```
 
-Uninstall:
+只删除 ODB2VTU-S 程序、图标和快捷方式，不删除用户的 ODB、VTU、PVD、Manifest、INP 等结果文件。
+
+## 修改 Abaqus 命令
+
+默认配置就是上述 CentOS 7 + Singularity + Abaqus 2024 命令。
+
+如果以后服务器上的 Abaqus 容器路径改变，不需要修改 Python 源码，可以在启动前覆盖：
 
 ```bash
-./packaging/linux/uninstall_clickable.sh
+ABAQUS_CMD='singularity exec /new/path/abaqus2024.sif /opt/run_abaqus.sh' ./launch.sh
 ```
 
-Uninstalling removes only program files and shortcuts, not ODB/INP/results.
+GUI 顶部的 **Abaqus command** 也会显示并使用该启动前缀。
 
+## 桌面图标为什么采用这种安装方式
 
-## Desktop icons
+桌面入口使用标准 `.desktop` 文件；其 `Icon` 可以使用绝对路径指向 PNG，因此不依赖系统是否已经建立对应的图标主题缓存。citeturn0search0
 
-The Linux installer creates two desktop shortcuts with distinct icons:
+同时安装器还把图标复制到用户级 hicolor 图标目录，便于 GNOME/其他兼容桌面环境通过图标名解析。
 
-- **ODB2VTU-S Exporter** — ODB → VTU visualization icon
-- **ODB2VTU-S CPFEM Postprocessor** — curve/data-analysis icon
-
-Running the installer again safely refreshes the installed program files and desktop shortcuts.

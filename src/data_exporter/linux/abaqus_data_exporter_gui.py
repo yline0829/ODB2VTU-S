@@ -77,6 +77,7 @@ class App(tk.Tk):
         self.frame_policy_var = tk.StringVar(value='合并/保留既有帧 / Merge')
         self.field_policy_var = tk.StringVar(value='合并/保留既有变量 / Merge')
         self.compatibility_mode_var = tk.StringVar(value='快速兼容（推荐）')
+        self.write_mode_var = tk.BooleanVar(value=False)
         self.cleanup_removed_var = tk.BooleanVar(value=False)
 
         self._style()
@@ -545,12 +546,22 @@ class App(tk.Tk):
             values=['标准增量（已有 Manifest）','快速兼容（推荐）','严格验证（逐帧核对数值）'])
         self.compatibility_mode_cb.pack(side='left',padx=6)
         self.compatibility_mode_cb.current(1)
-        ttk.Label(policy,text='无 Manifest 时自动核验并在新 MIGRATED_SAFE 目录增量更新，原文件不变。',
-                  foreground='#555').pack(anchor='w',pady=(3,0))
+        self.in_place_cb = ttk.Checkbutton(
+            policy,
+            text='原位增量更新已有 VTU / In-place update existing VTUs (no new folder)',
+            variable=self.write_mode_var,
+            command=self.update_export_summary)
+        self.in_place_cb.pack(anchor='w',pady=(7,0))
+        self.compat_hint = ttk.Label(
+            policy,
+            text='安全复制模式：无 Manifest 的旧数据会复制到 MIGRATED_SAFE；勾选原位更新后不创建新数据目录，直接更新原 VTU。',
+            foreground='#555')
+        self.compat_hint.pack(anchor='w',pady=(3,0))
         pr2=ttk.Frame(policy); pr2.pack(fill='x',pady=(5,0))
         ttk.Checkbutton(
             pr2,text='同步帧时同时删除已移除帧的 VTU / Delete removed-frame VTU files',
-            variable=self.cleanup_removed_var).pack(side='left')
+            variable=self.cleanup_removed_var,
+            command=self.update_export_summary).pack(side='left')
         ttk.Label(
             policy,
             text='Merge 为安全默认：未再次选择的旧帧/旧变量均保留；Sync 才执行删除语义。',
@@ -793,6 +804,13 @@ class App(tk.Tk):
         self.output_file.set(str(Path(d)/(stem+('_series.pvd' if self.series_var.get() else '_selected.vtu'))))
         self.update_export_summary()
     def _series_toggle(self):
+        # In-place update applies only to an existing PVD time series.
+        if not self.series_var.get():
+            self.write_mode_var.set(False)
+            if hasattr(self, 'in_place_cb'):
+                self.in_place_cb.configure(state='disabled')
+        elif hasattr(self, 'in_place_cb'):
+            self.in_place_cb.configure(state='normal')
         self.refresh_output_path()
         self.update_export_summary()
 
@@ -882,6 +900,7 @@ class App(tk.Tk):
         lines.append('Frame policy : %s' % self.frame_policy_var.get())
         lines.append('Field policy : %s' % self.field_policy_var.get())
         lines.append('Compatibility : %s' % self.compatibility_mode_var.get())
+        lines.append('Write mode    : %s' % ('in_place' if self.write_mode_var.get() else 'safe_copy'))
         if self.cleanup_removed_var.get():
             lines.append('Cleanup      : delete VTU files removed by frame sync')
         if self.bbox_var.get().strip(): lines.append('BBox     : %s' % self.bbox_var.get().strip())
@@ -920,6 +939,24 @@ class App(tk.Tk):
         if self.gnd_diff_var.get() and not Path(self.gnd_dat_var.get()).exists():messagebox.showerror('GND','GND差值需要有效的 gnd_field.dat');return
         field_policy='sync' if self.field_policy_cb.current() == 1 else 'merge'
         frame_policy='sync' if self.frame_policy_cb.current() == 1 else 'merge'
+        write_mode='in_place' if self.write_mode_var.get() else 'safe_copy'
+        if write_mode == 'in_place':
+            if not self.series_var.get():
+                messagebox.showerror('In-place update',
+                                     self._m('原位更新只适用于已有 PVD 时间序列；请先勾选“PVD时间序列”。',
+                                             'In-place update applies only to an existing PVD time series.'))
+                return
+            output_path = Path(self.output_file.get())
+            if not output_path.is_file():
+                messagebox.showerror('In-place update',
+                                     self._m('原位更新必须选择一个已经存在的 PVD；首次导出请取消此选项。',
+                                             'In-place update requires an existing PVD; uncheck it for first export.'))
+                return
+            if frame_policy != 'merge' or field_policy != 'merge' or self.cleanup_removed_var.get():
+                messagebox.showerror('In-place update',
+                                     self._m('原位更新只允许 Frame Merge + Field Merge，且不能删除 VTU。',
+                                             'In-place update requires Frame Merge + Field Merge with file deletion disabled.'))
+                return
         # Require informed confirmation before any Sync operation.
         if self.series_var.get() and frame_policy == 'sync':
             if not messagebox.askyesno('确认 Frame Sync',
@@ -959,6 +996,20 @@ class App(tk.Tk):
             effective_output=output
             target_manifest = output.parent / (output.stem+'_frames') / '_ODB2VTUS_manifest.json'
             missing_manifest = output.is_file() and not target_manifest.is_file()
+            if write_mode == 'in_place':
+                if compatibility_mode == 'standard' and missing_manifest:
+                    messagebox.showerror(
+                        'In-place compatibility',
+                        self._m('当前数据没有可信 Manifest。原位更新请选择“快速兼容”或“严格验证”；标准模式不能直接接管无 Manifest 数据。',
+                                'This dataset has no trusted Manifest. For in-place update choose Fast or Strict compatibility; Standard mode cannot adopt a manifest-less dataset directly.'))
+                    return
+                if not messagebox.askyesno(
+                        '原位增量更新 / In-place update',
+                        self._m(
+                            '将直接更新已有 VTU，原文件名和 PVD 路径不变，不创建 MIGRATED_SAFE 文件夹。每帧先写入同目录临时文件，成功后原子替换；异常中断时保留回滚硬链接和事务日志。请确认已有独立备份。继续？',
+                            'Existing VTUs will be updated at their original paths. No MIGRATED_SAFE folder will be created. Each frame is written to an adjacent temporary file and atomically replaces the original after success; rollback hardlinks and a transaction journal protect interrupted updates. Ensure you have an independent backup. Continue?'),
+                        icon='warning'):
+                    return
             if missing_manifest and compatibility_mode == 'standard':
                 title = self._m('需要原始 Manifest','Original Manifest required')
                 messagebox.showinfo(title, self._m(
@@ -967,7 +1018,7 @@ class App(tk.Tk):
                 selected = filedialog.askopenfilename(title=title, filetypes=[('Manifest JSON','*.json')])
                 if not selected:return
                 adoption=['--adopt-manifest-path',selected]
-            if missing_manifest and compatibility_mode != 'standard':
+            if missing_manifest and compatibility_mode != 'standard' and write_mode == 'safe_copy':
                 effective_output = output.parent / (output.stem + '_MIGRATED_SAFE') / output.name
                 if frame_policy != 'merge' or field_policy != 'merge' or self.cleanup_removed_var.get():
                     messagebox.showerror('Compatibility','旧版安全迁移只允许 Frame Merge + Field Merge 且不允许删除文件。')
@@ -982,7 +1033,8 @@ class App(tk.Tk):
                 '--frame-policy',frame_policy, '--compatibility-mode',compatibility_mode,
                 '--cleanup-removed-frames','1' if self.cleanup_removed_var.get() else '0',
                 '--confirm-frame-sync', '1' if frame_policy == 'sync' else '0',
-                '--confirm-delete-files', '1' if self.cleanup_removed_var.get() else '0'] + adoption
+                '--confirm-delete-files', '1' if self.cleanup_removed_var.get() else '0',
+                '--write-mode', write_mode] + adoption
         else:
             if not self.step_cb.get() or not self.frame_cb.get():return
             args=[EXPORT_PY]+common+['--step',self.step_cb.get(),'--frame',self.frame_cb.get(),'--out',self.output_file.get()]

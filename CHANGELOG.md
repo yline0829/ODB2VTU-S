@@ -1,4 +1,5 @@
 ## [0.2.1] - Stable
+- Linux GUI now exposes the explicit **In-place update** option and passes `--write-mode in_place` to the already supported transaction backend; legacy Fast/Strict compatibility can update the original PVD/VTUs without creating `MIGRATED_SAFE`.
 - PVD-authoritative Step/Frame reuse with unused historic VTUs preserved.
 - In-place incremental SDV Field Merge; source filenames stay unchanged.
 - Fast two-frame numerical witness or strict per-frame validation.

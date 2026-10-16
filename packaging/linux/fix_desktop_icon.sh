@@ -2,17 +2,21 @@
 set -euo pipefail
 
 # Repair only the ODB2VTU-S desktop launcher/icon.
-# The installed icon is pinned to the the supplied ODB2VTU-S Exporter icon (uploaded artwork).
 # User ODB/VTU/PVD/Manifest/INP files are never touched.
 
 PREFIX="$HOME/.local/share/odb2vtu-s/workbench"
 APPS="$HOME/.local/share/applications"
-ICON="$PREFIX/icons/odb2vtu-s-exporter.png"
+ICON_THEME="$HOME/.local/share/icons/hicolor"
+ICON_DIR="$ICON_THEME/256x256/apps"
+ICON_DIR_128="$ICON_THEME/128x128/apps"
+ICON_NAME="odb2vtu-s-exporter"
+ICON_FILE="$ICON_NAME.png"
+ICON="$PREFIX/icons/$ICON_FILE"
 DESKTOP_FILE="$APPS/odb2vtu-s-workbench.desktop"
 
 if [ ! -s "$ICON" ]; then
   echo "ERROR: installed ODB2VTU-S icon not found: $ICON" >&2
-  echo "Please run install_clickable.sh from the v0.2.1 package first." >&2
+  echo "Please run install_clickable.sh from the v0.2.2 package first." >&2
   exit 2
 fi
 
@@ -22,14 +26,30 @@ if [ "$MAGIC" != "89504e470d0a1a0a" ]; then
   exit 3
 fi
 
-EXPECTED_ICON_SHA256="1bce724fe4371f70d9c5fd1fa8587096421dda055c64cc543857a9e4059435d8"
-ACTUAL_ICON_SHA256="$(sha256sum "$ICON" | awk '{print $1}')"
-if [ "$ACTUAL_ICON_SHA256" != "$EXPECTED_ICON_SHA256" ]; then
-  echo "ERROR: installed icon does not match the supplied ODB2VTU-S Exporter artwork." >&2
-  exit 5
+mkdir -p "$APPS" "$ICON_DIR" "$ICON_DIR_128"
+cp -f "$ICON" "$ICON_DIR/$ICON_FILE"
+cp -f "$ICON" "$ICON_DIR_128/$ICON_FILE"
+chmod 0644 "$ICON" "$ICON_DIR/$ICON_FILE" "$ICON_DIR_128/$ICON_FILE"
+
+if [ ! -f "$ICON_THEME/index.theme" ]; then
+  cat > "$ICON_THEME/index.theme" <<'EOF'
+[Icon Theme]
+Name=Hicolor
+Comment=Fallback icon theme
+Directories=256x256/apps,128x128/apps
+
+[256x256/apps]
+Size=256
+Context=Applications
+Type=Fixed
+
+[128x128/apps]
+Size=128
+Context=Applications
+Type=Fixed
+EOF
 fi
 
-mkdir -p "$APPS"
 cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
 Version=1.0
@@ -40,7 +60,7 @@ Comment=ODB export, field analysis, friction CPFEM and safe recovery
 Comment[zh_CN]=ODB 导出、场变量分析、摩擦 CPFEM 与安全恢复
 Exec=$PREFIX/launch.sh
 TryExec=$PREFIX/launch.sh
-Icon=$ICON
+Icon=$ICON_NAME
 Path=$PREFIX
 Terminal=false
 StartupNotify=true
@@ -66,11 +86,17 @@ rm -f "$SHORTCUT"
 cp -f "$DESKTOP_FILE" "$SHORTCUT"
 chmod 0755 "$SHORTCUT"
 
+ICON_URI="file://$ICON"
 if command -v gio >/dev/null 2>&1; then
   if command -v dbus-launch >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ]; then
     dbus-launch --exit-with-session gio set "$SHORTCUT" metadata::trusted true 2>/dev/null || true
+    dbus-launch --exit-with-session gio set -t string "$SHORTCUT" metadata::custom-icon "$ICON_URI" 2>/dev/null || true
   fi
   gio set "$SHORTCUT" metadata::trusted true 2>/dev/null || true
+  gio set -t string "$SHORTCUT" metadata::custom-icon "$ICON_URI" 2>/dev/null || true
+elif command -v gvfs-set-attribute >/dev/null 2>&1; then
+  gvfs-set-attribute -t string "$SHORTCUT" metadata::trusted true 2>/dev/null || true
+  gvfs-set-attribute -t string "$SHORTCUT" metadata::custom-icon "$ICON_URI" 2>/dev/null || true
 fi
 touch "$SHORTCUT"
 
@@ -85,7 +111,10 @@ if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$APPS" >/dev/null 2>&1 || true
 fi
 
-echo "ODB2VTU-S desktop icon repaired."
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -f -t "$ICON_THEME" >/dev/null 2>&1 || true
+fi
+
+echo "ODB2VTU-S desktop icon repaired for v0.2.2."
 echo "Desktop : $SHORTCUT"
 echo "Icon    : $ICON"
-echo "If GNOME still shows the old paper icon, log out and back in once."

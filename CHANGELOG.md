@@ -1,3 +1,12 @@
+## [0.2.2] - 2026-10-16
+
+### Linux packaging and desktop icon fix
+- Reworked the Linux installer to use the standard per-user hicolor application icon theme instead of pinning the desktop launcher to a single absolute PNG path.
+- Removed the obsolete hard-coded icon SHA-256 check so the packaged artwork remains the single source of truth.
+- Added GIO custom-icon metadata and trusted-launcher handling for CentOS 7 / GNOME / Nautilus compatibility.
+- Added the desktop icon repair script to the Linux release package.
+- Linux reinstall continues to replace the existing Workbench installation in place and does not create migration directories or touch user ODB/VTU/PVD/INP data.
+
 ## [0.2.1] - Stable
 - Windows Exporter can be built as a native x64 EXE with the supplied ODB2VTU-S icon; the Abaqus/Python backend remains external for fast startup and in-place updates.
 - Linux GUI now exposes the explicit **In-place update** option and passes `--write-mode in_place` to the already supported transaction backend; legacy Fast/Strict compatibility can update the original PVD/VTUs without creating `MIGRATED_SAFE`.

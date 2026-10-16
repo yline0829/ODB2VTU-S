@@ -4,11 +4,14 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="$HOME/.local/share/odb2vtu-s/workbench"
 APPS="$HOME/.local/share/applications"
-ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
-ICON_NAME="odb2vtu-s-exporter.png"
+ICON_THEME="$HOME/.local/share/icons/hicolor"
+ICON_DIR="$ICON_THEME/256x256/apps"
+ICON_DIR_128="$ICON_THEME/128x128/apps"
+ICON_NAME="odb2vtu-s-exporter"
+ICON_FILE="$ICON_NAME.png"
 DESKTOP_FILE="$APPS/odb2vtu-s-workbench.desktop"
 
-mkdir -p "$PREFIX" "$APPS" "$ICON_DIR"
+mkdir -p "$PREFIX" "$APPS" "$ICON_DIR" "$ICON_DIR_128"
 
 # The release ZIP contains launch.sh + all runtime files in one directory.
 # A source checkout contains the same modules in their repository locations.
@@ -21,42 +24,51 @@ else
   cp -a "$REPO/src/postprocess/backend"/. "$PREFIX"/
   cp -a "$REPO/scripts/diagnose_output_readonly.py" "$PREFIX/"
   mkdir -p "$PREFIX/icons"
-  cp -a "$REPO/assets/icons"/. "$PREFIX/icons/"
+  cp -a "$REPO/assets/icons"/. "$PREFIX/icons"/
 fi
 
 chmod +x "$PREFIX/launch.sh"
 
-# Pin the desktop icon to the the supplied ODB2VTU-S Exporter icon (uploaded artwork).
-# PNG is the supplied ODB2VTU-S Exporter artwork, normalized to 128x128 for the repository icon slot.
-# SHA-256 of the PNG: 1bce724fe4371f70d9c5fd1fa8587096421dda055c64cc543857a9e4059435d8
-ICON_SRC="$PREFIX/icons/$ICON_NAME"
+# The supplied ODB2VTU-S artwork is the single source of truth.
+ICON_SRC="$PREFIX/icons/$ICON_FILE"
 if [ ! -s "$ICON_SRC" ]; then
   echo "ERROR: required icon is missing: $ICON_SRC" >&2
   exit 2
 fi
 
-# Validate PNG magic bytes before installing it. This catches incomplete
-# package copies instead of silently producing a generic document icon.
+# Validate PNG magic bytes before installing it.
 PNG_MAGIC="$(od -An -tx1 -N8 "$ICON_SRC" 2>/dev/null | tr -d ' \n' || true)"
 if [ "$PNG_MAGIC" != "89504e470d0a1a0a" ]; then
   echo "ERROR: icon is not a valid PNG: $ICON_SRC" >&2
   exit 3
 fi
 
-EXPECTED_ICON_SHA256="1bce724fe4371f70d9c5fd1fa8587096421dda055c64cc543857a9e4059435d8"
-ACTUAL_ICON_SHA256="$(sha256sum "$ICON_SRC" | awk '{print $1}')"
-if [ "$ACTUAL_ICON_SHA256" != "$EXPECTED_ICON_SHA256" ]; then
-  echo "ERROR: desktop icon does not match the supplied ODB2VTU-S Exporter artwork." >&2
-  echo "Expected: $EXPECTED_ICON_SHA256" >&2
-  echo "Actual  : $ACTUAL_ICON_SHA256" >&2
-  exit 5
-fi
+# Install the icon through the standard per-user hicolor theme.
+# Do not pin a hard-coded checksum: the packaged artwork itself is authoritative.
+cp -f "$ICON_SRC" "$ICON_DIR/$ICON_FILE"
+cp -f "$ICON_SRC" "$ICON_DIR_128/$ICON_FILE"
+chmod 0644 "$ICON_SRC" "$ICON_DIR/$ICON_FILE" "$ICON_DIR_128/$ICON_FILE"
 
-# Keep a theme copy for menus, but the desktop launcher deliberately points
-# to the absolute program-local icon path. This avoids hicolor cache/name
-# resolution differences on CentOS 7 GNOME.
-cp -f "$ICON_SRC" "$ICON_DIR/$ICON_NAME"
-chmod 0644 "$ICON_SRC" "$ICON_DIR/$ICON_NAME"
+# Some older CentOS 7 installations do not have a user hicolor index.
+# Create a minimal one only when it is absent; never overwrite a user's theme.
+if [ ! -f "$ICON_THEME/index.theme" ]; then
+  cat > "$ICON_THEME/index.theme" <<'EOF'
+[Icon Theme]
+Name=Hicolor
+Comment=Fallback icon theme
+Directories=256x256/apps,128x128/apps
+
+[256x256/apps]
+Size=256
+Context=Applications
+Type=Fixed
+
+[128x128/apps]
+Size=128
+Context=Applications
+Type=Fixed
+EOF
+fi
 
 cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
@@ -68,7 +80,7 @@ Comment=ODB export, field analysis, friction CPFEM and safe recovery
 Comment[zh_CN]=ODB 导出、场变量分析、摩擦 CPFEM 与安全恢复
 Exec=$PREFIX/launch.sh
 TryExec=$PREFIX/launch.sh
-Icon=$ICON_SRC
+Icon=$ICON_NAME
 Path=$PREFIX
 Terminal=false
 StartupNotify=true
@@ -96,18 +108,22 @@ rm -f "$DESKTOP_SHORTCUT"
 cp -f "$DESKTOP_FILE" "$DESKTOP_SHORTCUT"
 chmod 0755 "$DESKTOP_SHORTCUT"
 
-# On GNOME/Nautilus, the desktop launcher must be trusted before its real
-# Name/Icon is displayed. Prefer a session DBus when this installer is run
-# from a graphical terminal; fall back to plain gio where available.
+# CentOS 7 GNOME/Nautilus can cache desktop launcher icons. In addition to the
+# standard Icon= name, set GIO custom-icon metadata on the actual desktop file.
+ICON_URI="file://$ICON_SRC"
 if command -v gio >/dev/null 2>&1; then
   if command -v dbus-launch >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ]; then
     dbus-launch --exit-with-session gio set "$DESKTOP_SHORTCUT" metadata::trusted true 2>/dev/null || true
+    dbus-launch --exit-with-session gio set -t string "$DESKTOP_SHORTCUT" metadata::custom-icon "$ICON_URI" 2>/dev/null || true
   fi
   gio set "$DESKTOP_SHORTCUT" metadata::trusted true 2>/dev/null || true
+  gio set -t string "$DESKTOP_SHORTCUT" metadata::custom-icon "$ICON_URI" 2>/dev/null || true
+elif command -v gvfs-set-attribute >/dev/null 2>&1; then
+  gvfs-set-attribute -t string "$DESKTOP_SHORTCUT" metadata::trusted true 2>/dev/null || true
+  gvfs-set-attribute -t string "$DESKTOP_SHORTCUT" metadata::custom-icon "$ICON_URI" 2>/dev/null || true
 fi
 touch "$DESKTOP_SHORTCUT"
 
-# Validate the generated desktop entry when desktop-file-utils is present.
 if command -v desktop-file-validate >/dev/null 2>&1; then
   desktop-file-validate "$DESKTOP_FILE" >/dev/null 2>&1 || {
     echo "ERROR: generated desktop entry failed validation: $DESKTOP_FILE" >&2
@@ -115,22 +131,19 @@ if command -v desktop-file-validate >/dev/null 2>&1; then
   }
 fi
 
-# Refresh per-user desktop metadata. The icon itself does not depend on this
-# cache because Icon= uses the absolute PNG path above.
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$APPS" >/dev/null 2>&1 || true
 fi
 
-# Refresh the GTK hicolor cache when a usable user theme exists.
-if command -v gtk-update-icon-cache >/dev/null 2>&1 && [ -f "$HOME/.local/share/icons/hicolor/index.theme" ]; then
-  gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -f -t "$ICON_THEME" >/dev/null 2>&1 || true
 fi
 
 # Remove obsolete standalone launchers only; never touch user ODB/VTU/PVD/INP data.
 rm -f "$APPS/odb2vtu-s-exporter.desktop" "$APPS/odb2vtu-s-cpfem-postprocessor.desktop"
 rm -f "$DESKTOP_DIR/ODB2VTU-S Exporter.desktop" "$DESKTOP_DIR/ODB2VTU-S CPFEM Postprocessor.desktop"
 
-echo "Installed unified ODB2VTU-S Workbench v0.2.1"
+echo "Installed unified ODB2VTU-S Workbench v0.2.2"
 echo "Install root : $PREFIX"
 echo "Desktop icon  : $DESKTOP_SHORTCUT"
 echo "Menu entry    : $DESKTOP_FILE"

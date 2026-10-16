@@ -29,7 +29,7 @@ cp(ROOT/'src/data_exporter/backend',lin)
 cp(ROOT/'src/postprocess/backend',lin)
 shutil.copy2(ROOT/'scripts/diagnose_output_readonly.py',lin/'diagnose_output_readonly.py')
 cp(ROOT/'assets/icons',lin/'icons')
-for script in ('install_clickable.sh','uninstall_clickable.sh'):
+for script in ('install_clickable.sh','fix_desktop_icon.sh','uninstall_clickable.sh'):
     shutil.copy2(ROOT/'packaging/linux'/script,lin/script)
     (lin/script).chmod(0o755)
 zipout(lin,'ODB2VTU-S_Workbench_Linux_v%s.zip'%VERSION)

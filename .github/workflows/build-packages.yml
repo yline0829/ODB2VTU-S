@@ -41,7 +41,6 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import zipfile
-          import sys
           version = Path('VERSION').read_text().strip()
           dist = Path('dist')
           needed = [
@@ -66,7 +65,9 @@ jobs:
                                   'ODB2VTU-S_Exporter.ps1'):
                           assert rel in names, rel
                   if 'Workbench_Linux' in filename:
-                      assert 'odb_vtu_incremental.py' in names
+                      for rel in ('odb_vtu_incremental.py','fix_desktop_icon.sh',
+                                  'install_clickable.sh','uninstall_clickable.sh'):
+                          assert rel in names, rel
                   print(filename, p.stat().st_size, 'bytes /', len(names), 'files')
           PY
       - name: Upload downloadable source and software ZIPs

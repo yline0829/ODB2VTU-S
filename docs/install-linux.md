@@ -24,7 +24,7 @@ SingularityCE 的 `exec` 语法本身就是“容器 + 要执行的命令”，�
 python <backend.py> ...
 ```
 
-不需要手动加入 `cae -mesa`。citeturn2search0
+不需要手动加入 `cae -mesa`。
 
 ## 启动
 
@@ -44,7 +44,7 @@ chmod +x install_clickable.sh
 5. 刷新用户应用数据库（系统存在 `update-desktop-database` 时）
 6. 在 GNOME/GIO 可用时标记桌面启动器为可信
 
-Linux 桌面目录通过 `xdg-user-dir DESKTOP` 获取，因此不会假定用户一定使用英文的 `~/Desktop`。citeturn3search0
+Linux 桌面目录通过 `xdg-user-dir DESKTOP` 获取，因此不会假定用户一定使用英文的 `~/Desktop`。
 
 ## 卸载
 
@@ -68,7 +68,7 @@ GUI 顶部的 **Abaqus command** 也会显示并使用该启动前缀。
 
 ## 桌面图标为什么采用这种安装方式
 
-桌面入口使用标准 `.desktop` 文件；其 `Icon` 可以使用绝对路径指向 PNG，因此不依赖系统是否已经建立对应的图标主题缓存。citeturn0search0
+桌面入口使用标准 `.desktop` 文件；其 `Icon` 可以使用绝对路径指向 PNG，因此不依赖系统是否已经建立对应的图标主题缓存。
 
 同时安装器还把图标复制到用户级 hicolor 图标目录，便于 GNOME/其他兼容桌面环境通过图标名解析。
 

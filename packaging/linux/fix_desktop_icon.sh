@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Repair only the ODB2VTU-S desktop launcher/icon.
-# The installed icon is pinned to the exact v0.2.0 Exporter icon.
+# The installed icon is pinned to the the supplied ODB2VTU-S Exporter icon (uploaded artwork).
 # User ODB/VTU/PVD/Manifest/INP files are never touched.
 
 PREFIX="$HOME/.local/share/odb2vtu-s/workbench"
@@ -20,6 +20,13 @@ MAGIC="$(od -An -tx1 -N8 "$ICON" 2>/dev/null | tr -d ' \n' || true)"
 if [ "$MAGIC" != "89504e470d0a1a0a" ]; then
   echo "ERROR: installed icon is not a valid PNG: $ICON" >&2
   exit 3
+fi
+
+EXPECTED_ICON_SHA256="1bce724fe4371f70d9c5fd1fa8587096421dda055c64cc543857a9e4059435d8"
+ACTUAL_ICON_SHA256="$(sha256sum "$ICON" | awk '{print $1}')"
+if [ "$ACTUAL_ICON_SHA256" != "$EXPECTED_ICON_SHA256" ]; then
+  echo "ERROR: installed icon does not match the supplied ODB2VTU-S Exporter artwork." >&2
+  exit 5
 fi
 
 mkdir -p "$APPS"

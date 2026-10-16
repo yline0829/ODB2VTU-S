@@ -46,8 +46,8 @@ jobs:
           dist = Path('dist')
           needed = [
               f'ODB2VTU-S_Source_v{version}.zip',
-              f'ODB2VTU-S_Exporter_Windows_Portable_v{version}.zip',
-              f'ODB2VTU-S_CPFEM_Postprocessor_Windows_Portable_v{version}.zip',
+              f'ODB2VTU-S_Workbench_Windows_Portable_v{version}.zip',
+              f'ODB2VTU-S_Workbench_Linux_v{version}.zip',
               f'ODB2VTU-S_Linux_Tools_v{version}.zip',
           ]
           for filename in needed:
@@ -62,12 +62,12 @@ jobs:
                                   'src/data_exporter/backend/odb_vtu_incremental.py',
                                   'tests/test_vtu_incremental_perf.py'):
                           assert f'ODB2VTU-S-v{version}/' + rel in names, rel
-                  if 'Exporter_Windows' in filename:
+                  if 'Workbench_Windows' in filename:
                       for rel in ('odb_export_series.py', 'odb_vtu_incremental.py',
                                   'ODB2VTU-S_Exporter.ps1'):
                           assert rel in names, rel
-                  if 'Linux_Tools' in filename:
-                      assert 'ODB2VTU-S_Exporter_Linux/odb_vtu_incremental.py' in names
+                  if 'Workbench_Linux' in filename:
+                      assert 'odb_vtu_incremental.py' in names
                   print(filename, p.stat().st_size, 'bytes /', len(names), 'files')
           PY
       - name: Upload downloadable source and software ZIPs

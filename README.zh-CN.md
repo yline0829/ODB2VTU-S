@@ -195,6 +195,7 @@ examples/        # 小型、非专有示例文件
 - ParaView，用于 VTU/PVD 可视化
 - Windows：Windows PowerShell / WPF
 - Linux GUI：Python 3 + Tkinter
+- 当前验证环境：CentOS 7 + SingularityCE + Abaqus 2024；Linux Workbench 默认调用 `singularity exec /home/soft/abaqus2024.sif /opt/run_abaqus.sh`
 
 如果 Linux 中的 Abaqus 通过 Singularity/Apptainer 容器运行，可以在软件的 **Abaqus command** 中填写完整命令前缀，例如：
 
@@ -238,7 +239,7 @@ python scripts/build_release.py
 
 ## 开发状态
 
-当前开发源码版本为 **v0.2.0**，重点包含 Frame/Field 两级 Merge/Sync、文件夹 VTU 识别、变量级增量复用以及参考数据跨帧缓存。**GitHub Releases 公开资产可能仍是较早版本**，请以具体 ZIP 文件名和版本号为准。此前 v0.1.2 主要新增独立桌面图标和 Linux 小屏幕交互改善。
+当前开发源码版本为 **v0.2.1**，重点包含 Frame/Field 两级 Merge/Sync、文件夹 VTU 识别、变量级增量复用以及参考数据跨帧缓存。**GitHub Releases 公开资产可能仍是较早版本**，请以具体 ZIP 文件名和版本号为准。此前 v0.1.2 主要新增独立桌面图标和 Linux 小屏幕交互改善。
 
 如果遇到 Abaqus 版本兼容、特定单元类型、场变量映射或工作流问题，欢迎通过 GitHub **Issues** 提交。
 

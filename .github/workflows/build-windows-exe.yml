@@ -1,0 +1,59 @@
+name: Build Windows EXE
+
+on:
+  push:
+    paths:
+      - 'src/data_exporter/windows/**'
+      - 'src/data_exporter/backend/**'
+      - 'src/postprocess/backend/**'
+      - 'assets/icons/odb2vtu-s-exporter.ico'
+      - 'assets/icons/odb2vtu-s-exporter.png'
+      - 'packaging/windows/**'
+      - 'VERSION'
+      - '.github/workflows/build-windows-exe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Windows EXE
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\packaging\windows\build_exe.ps1"
+
+      - name: Validate generated package
+        shell: powershell
+        run: |
+          $version = (Get-Content -LiteralPath ".\VERSION" -Raw).Trim()
+          $dist = Resolve-Path ".\dist"
+          $exe = Join-Path $dist "ODB2VTU-S_Exporter_v$version.exe"
+          $zip = Join-Path $dist "ODB2VTU-S_Workbench_Windows_EXE_v$version.zip"
+          $sha = Join-Path $dist "ODB2VTU-S_Exporter_v$version.sha256.txt"
+          foreach ($p in @($exe,$zip,$sha)) {
+            if (-not (Test-Path -LiteralPath $p -PathType Leaf)) {
+              throw "Missing build output: $p"
+            }
+            if ((Get-Item -LiteralPath $p).Length -le 0) {
+              throw "Empty build output: $p"
+            }
+            Write-Host "$p -> $((Get-Item -LiteralPath $p).Length) bytes"
+          }
+
+      - name: Upload Windows EXE package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ODB2VTU-S-Windows-EXE-${{ github.run_number }}
+          path: |
+            dist/ODB2VTU-S_Exporter_v*.exe
+            dist/ODB2VTU-S_Workbench_Windows_EXE_v*.zip
+            dist/ODB2VTU-S_Exporter_v*.sha256.txt
+          if-no-files-found: error
+          retention-days: 14

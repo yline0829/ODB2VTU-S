@@ -3,7 +3,14 @@ Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Windows.Forms
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Resolve the directory containing the GUI/backend files in both script and PS2EXE-compiled modes.
+# PS2EXE 1.0.18 provides $ScriptRoot because $PSScriptRoot/$MyInvocation are not reliable in a compiled EXE.
+$scriptDir = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($scriptDir)) { $scriptDir = $ScriptRoot }
+if ([string]::IsNullOrWhiteSpace($scriptDir)) {
+    $scriptDir = Split-Path -Parent ([Environment]::GetCommandLineArgs()[0])
+}
+if ([string]::IsNullOrWhiteSpace($scriptDir)) { $scriptDir = (Get-Location).Path }
 $metaPy = Join-Path $scriptDir "odb_metadata.py"
 $fieldsPy = Join-Path $scriptDir "odb_list_fields.py"
 $exportPy = Join-Path $scriptDir "odb_export_vtu.py"

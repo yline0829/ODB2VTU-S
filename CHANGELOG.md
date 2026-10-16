@@ -1,4 +1,5 @@
 ## [0.2.1] - Stable
+- Windows Exporter can be built as a native x64 EXE with the supplied ODB2VTU-S icon; the Abaqus/Python backend remains external for fast startup and in-place updates.
 - Linux GUI now exposes the explicit **In-place update** option and passes `--write-mode in_place` to the already supported transaction backend; legacy Fast/Strict compatibility can update the original PVD/VTUs without creating `MIGRATED_SAFE`.
 - PVD-authoritative Step/Frame reuse with unused historic VTUs preserved.
 - In-place incremental SDV Field Merge; source filenames stay unchanged.

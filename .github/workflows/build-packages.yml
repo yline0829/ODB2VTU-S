@@ -48,7 +48,6 @@ jobs:
               f'ODB2VTU-S_Source_v{version}.zip',
               f'ODB2VTU-S_Workbench_Windows_Portable_v{version}.zip',
               f'ODB2VTU-S_Workbench_Linux_v{version}.zip',
-              f'ODB2VTU-S_Linux_Tools_v{version}.zip',
           ]
           for filename in needed:
               p = dist / filename

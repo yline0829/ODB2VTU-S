@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Repair only the ODB2VTU-S v0.2.1 desktop launcher/icon.
+# Repair only the ODB2VTU-S desktop launcher/icon.
+# The installed icon is pinned to the exact v0.2.0 Exporter icon.
 # User ODB/VTU/PVD/Manifest/INP files are never touched.
 
 PREFIX="$HOME/.local/share/odb2vtu-s/workbench"

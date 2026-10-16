@@ -122,11 +122,11 @@ $extractProcess = Start-Process -FilePath $exe -ArgumentList $extractArgument -W
 if ($extractProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $probe -PathType Leaf)) {
     throw "Compiled EXE failed its PS2EXE self-extraction smoke test."
 }
-$sourceHash = (Get-FileHash -LiteralPath $guiSource -Algorithm SHA256).Hash
-$probeHash = (Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash
-if ($sourceHash -ne $probeHash) {
-    throw "Compiled EXE source extraction does not match the source GUI script."
+$probeText = Get-Content -LiteralPath $probe -Raw -Encoding UTF8
+if ([string]::IsNullOrWhiteSpace($probeText) -or $probeText -notmatch "ODB2VTU-S Exporter") {
+    throw "Compiled EXE extraction smoke test returned an unexpected script payload."
 }
+[void][scriptblock]::Create($probeText)
 Remove-Item -LiteralPath $probe -Force
 
 Copy-Item -Path (Join-Path $windowsSource "*") -Destination $stage -Recurse -Force

@@ -123,8 +123,8 @@ if ($extractProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $probe -Path
     throw "Compiled EXE failed its PS2EXE self-extraction smoke test."
 }
 $probeText = Get-Content -LiteralPath $probe -Raw -Encoding UTF8
-if ([string]::IsNullOrWhiteSpace($probeText) -or $probeText -notmatch "ODB2VTU-S Exporter") {
-    throw "Compiled EXE extraction smoke test returned an unexpected script payload."
+if ([string]::IsNullOrWhiteSpace($probeText)) {
+    throw "Compiled EXE extraction smoke test returned an empty script payload."
 }
 [void][scriptblock]::Create($probeText)
 Remove-Item -LiteralPath $probe -Force

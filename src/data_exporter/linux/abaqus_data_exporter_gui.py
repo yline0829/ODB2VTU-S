@@ -56,7 +56,7 @@ class App(tk.Tk):
         self.proc_queue = queue.Queue()
         self.running = False
 
-        self.abaqus_cmd = tk.StringVar(value=os.environ.get('ABAQUS_CMD', 'abaqus'))
+        self.abaqus_cmd = tk.StringVar(value=os.environ.get('ABAQUS_CMD', 'singularity exec /home/soft/abaqus2024.sif /opt/run_abaqus.sh'))
         self.odb_var = tk.StringVar()
         self.auto_out = tk.BooleanVar(value=True)
         self.custom_out_dir = tk.StringVar()
@@ -412,10 +412,10 @@ class App(tk.Tk):
     def _build_topbar(self):
         f = ttk.Frame(self, padding=(8,6))
         f.pack(fill='x')
-        ttk.Label(f, text='Abaqus command:').pack(side='left')
+        ttk.Label(f, text='Abaqus 命令 / Abaqus command:').pack(side='left')
         ttk.Entry(f, textvariable=self.abaqus_cmd, width=22).pack(side='left', padx=(5,12))
         ttk.Button(f, text='检查环境', command=self.check_env).pack(side='left')
-        ttk.Label(f, text='  例如: abaqus / abq2024 / /opt/.../abaqus').pack(side='left', padx=8)
+        ttk.Label(f, text='  默认: Singularity + Abaqus 2024').pack(side='left', padx=8)
         self.language_var = tk.StringVar(value='中文')
         self.language_cb = ttk.Combobox(f, textvariable=self.language_var, state='readonly',
                                         values=('中文', 'English'), width=10)

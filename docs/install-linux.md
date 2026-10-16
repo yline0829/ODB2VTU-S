@@ -26,6 +26,20 @@ python <backend.py> ...
 
 不需要手动加入 `cae -mesa`。
 
+## 原位增量更新
+
+Linux 工作台与 Windows 版统一支持 **In-place update**。在 **PVD 时间序列**模式下勾选“原位增量更新已有 VTU / In-place update existing VTUs”后，程序不会创建 `MIGRATED_SAFE` 数据目录，而是在原有 `PVD + *_frames/*.vtu` 路径上执行经过预检查的增量更新。
+
+使用原位更新时固定要求：
+
+- Frame policy = **Merge**
+- Field policy = **Merge**
+- 不启用删除已移除 VTU
+- 已有 PVD；首次导出不能使用原位更新
+- 无 Manifest 的历史数据使用 **Fast** 或 **Strict** 兼容模式
+
+实际写入仍采用同目录临时文件 → 完整校验 → 原子替换，并保留回滚硬链接和事务日志；因此“原位”表示**不新建数据目录、最终替换原 VTU 路径**，并不表示直接修改半写入的 XML 文件。
+
 ## 启动
 
 解压 Linux Workbench ZIP 后：

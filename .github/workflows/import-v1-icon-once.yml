@@ -1,0 +1,35 @@
+name: Import original Linux v1.0.0 icon (one time)
+
+on:
+  push:
+    paths:
+      - '.github/workflows/import-v1-icon-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  import-linux-icon:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Import original 256px PNG from published v1.0.0 Linux ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://github.com/yline0829/ODB2VTU-S/releases/download/v1.0.0/ODB2VTU-S_Workbench_Linux_v1.0.0.zip"
+          curl --fail --location --retry 3 --silent --show-error "$url" -o "$RUNNER_TEMP/linux-v1.0.0.zip"
+          echo "6b61076701047d274ec516f8e6492c8c85e1ac789e180ba6e464e0b0d7b4f1d2  $RUNNER_TEMP/linux-v1.0.0.zip" | sha256sum --check --status
+          mkdir -p src/data_exporter/linux/icons
+          unzip -p "$RUNNER_TEMP/linux-v1.0.0.zip" 'ODB2VTU-S_Workbench_Linux_v1.0.0/icons/odb2vtu-s-exporter-256.png' > src/data_exporter/linux/icons/odb2vtu-s-exporter-256.png
+          echo '120ba8f404b9adb08eda957b77cf2791f0543cca46c58eb5a5f0897b86412ef6  src/data_exporter/linux/icons/odb2vtu-s-exporter-256.png' | sha256sum --check --status
+          git add src/data_exporter/linux/icons/odb2vtu-s-exporter-256.png
+          if git diff --cached --quiet; then
+            echo "The original 256px icon is already committed."
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'assets(linux): restore original 256px v1.0.0 Workbench icon'
+          git push origin HEAD:main

@@ -22,7 +22,7 @@
 
 - Uploaded canonical distribution: `ODB2VTU-S_Workbench_Linux_v1.0.0.tar.gz` (SHA-256 `5f6287b12a5ad26245f5ebb6a0242c6c45626252545135b1f0d12bd22899aa23`).
 - The tarball contains 28 standalone source/documentation files and 4 icon resources. The 28 source/documentation files are stored independently under `src/data_exporter/linux/`, rather than overwriting shared Windows backend files.
-- The original Linux binary resources include `icons/odb2vtu-s-exporter-256.png`; preserve and distribute the original Linux TAR if a source-based build lacks this exact high-resolution icon file.
+- The original 256×256 Linux icon is now included in the repository at `src/data_exporter/linux/icons/odb2vtu-s-exporter-256.png`, byte-identical to the official release ZIP and TAR (SHA-256 `120ba8f404b9adb08eda957b77cf2791f0543cca46c58eb5a5f0897b86412ef6`).
 - Linux Python 3.6 syntax checks: 22/22; Bash syntax checks: 5/5. In an isolated HOME, install/uninstall retained a dataset sentinel outside the application installation directory.
 - The packaged Linux code is a separate implementation from the Windows self-extracting executable. Numerical behavior in a real CentOS 7, SingularityCE, Abaqus 2024 environment must be validated independently.
 
@@ -30,7 +30,11 @@
 
 The exact prepared release assets are:
 
-- Windows: `ODB2VTU-S_Windows_Validated_v1.0.0.zip` — SHA-256 `4fd5d2a00e13b3277f9a52e063c692f98d69f6967488472a2d0520ce3ead6359`.
+- Windows (published asset name): `ODB2VTU-S_Windows_v1.0.0.zip` — SHA-256 `4fd5d2a00e13b3277f9a52e063c692f98d69f6967488472a2d0520ce3ead6359`.
 - Linux: `ODB2VTU-S_Workbench_Linux_v1.0.0.zip` — SHA-256 `6b61076701047d274ec516f8e6492c8c85e1ac789e180ba6e464e0b0d7b4f1d2`.
 
-Both are program packages, not generated source archives. The Linux archive contains the complete 32-file user-provided payload. For a bit-for-bit reproducible Linux repository package, commit the original high-resolution PNG at `src/data_exporter/linux/icons/odb2vtu-s-exporter-256.png` (SHA-256 `120ba8f404b9adb08eda957b77cf2791f0543cca46c58eb5a5f0897b86412ef6`). The user-tested Windows EXE must remain unchanged and must not be replaced by a PS2EXE rebuild.
+Both are program packages, not generated source archives. The Linux archive contains the complete 32-file user-provided payload. The original 256px icon has been restored to the repository, and `tests/test_linux_icon_integrity.py` guards its checksum. The independently supplied published ZIP and TAR remain the canonical program distributions. The user-tested Windows EXE must remain unchanged and must not be replaced by a PS2EXE rebuild.
+
+## Published tag versus current main
+
+The `v1.0.0` Release and its three attached archives are already published. GitHub confirms the release assets' SHA-256 checksums match the original validated Windows ZIP and user-supplied Linux ZIP/TAR. The published Git tag is a historical snapshot, while `main` includes subsequent README screenshot, badge, and Linux icon source maintenance. **Do not silently move or rebuild the published tag or replace release assets.** Use the official attached program archives for installations and `main` for the latest documentation/source refinements. A future release tag can capture the newer repository tree.

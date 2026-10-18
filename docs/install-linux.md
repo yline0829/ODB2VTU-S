@@ -107,4 +107,4 @@ GUI 顶部的 **Abaqus command** 也会显示并使用该启动前缀。
 
 用户上传的正式 Linux TAR SHA-256：`5f6287b12a5ad26245f5ebb6a0242c6c45626252545135b1f0d12bd22899aa23`。共 32 个文件；源码部署目录为 `src/data_exporter/linux/`。安装、卸载、打包和源代码语法已做静态及隔离检查，但本次尚未在真实 CentOS 7 + Abaqus 2024 容器完成 ODB 数值输出验证。
 
-提示：正式 TAR 包含原始 256x256 图标资源，不能将自动回退到 128x128 图标的其他构建视为完全相同的二进制发布包。
+提示：正式 ZIP/TAR 和当前 GitHub `main` 均包含用户提供的原始 256×256 图标 `src/data_exporter/linux/icons/odb2vtu-s-exporter-256.png`（SHA-256：`120ba8f404b9adb08eda957b77cf2791f0543cca46c58eb5a5f0897b86412ef6`）。现有正式安装包保持不变；不要用自动回退到 128×128 图标的其他构建代替。

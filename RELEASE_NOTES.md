@@ -1,5 +1,18 @@
 # ODB2VTU-S v1.0.0 — Release Notes / 发布说明
 
+## v1.0.0 正式发布附件 / Release ZIP assets
+
+| 平台 / Platform | 发布文件 / Release file | SHA-256 (ZIP) |
+| --- | --- | --- |
+| Windows | `ODB2VTU-S_Windows_Validated_v1.0.0.zip` | `4fd5d2a00e13b3277f9a52e063c692f98d69f6967488472a2d0520ce3ead6359` |
+| Linux | `ODB2VTU-S_Workbench_Linux_v1.0.0.zip` | `6b61076701047d274ec516f8e6492c8c85e1ac789e180ba6e464e0b0d7b4f1d2` |
+
+Windows 包含原始已验证 `odb2vtu.exe`（EXE SHA-256：`bab33ff40ee8a7201628367f9b020b5736fbe880c703ca24f277fe1c55236c98`）。Linux ZIP 由用户原始 TAR （SHA-256：`5f6287b12a5ad26245f5ebb6a0242c6c45626252545135b1f0d12bd22899aa23`）无损转换，32 个文件逐字节一致，保留 Shell 可执行权限。
+
+The Windows package contains the unchanged, user-tested executable. The Linux ZIP faithfully reproduces the 32 files in the original user-provided TAR (including the original high-resolution icon). Neither ZIP is interchangeable with a legacy PS2EXE build or the auto-generated source archive. Release assets must be uploaded to the GitHub Release; a GitHub tag alone does not publish these ZIPs.
+
+**发布状态 / Publishing status:** 这些附件已在本地准备与校验，仍需在 GitHub Release 上传。The archives are prepared and verified but still require upload to GitHub Releases.
+
 ## 中文
 
 v1.0.0 整合两个平台各自的程序基准，避免以 Windows 已验证源码覆盖 Linux 新实现。

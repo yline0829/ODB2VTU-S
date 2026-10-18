@@ -7,6 +7,15 @@
 **Linux:** The v1.0.0 CentOS 7 / SingularityCE / Abaqus 2024 Workbench is now based on the separate user-supplied Linux source distribution (`ODB2VTU-S_Workbench_Linux_v1.0.0.tar.gz`, SHA-256: `5f6287b12a5ad26245f5ebb6a0242c6c45626252545135b1f0d12bd22899aa23`). Its GUI and backend remain isolated under `src/data_exporter/linux/` so that Linux revisions do not overwrite the user-validated Windows code. Python 3.6 syntax, Shell syntax, packaging and isolated install/uninstall were checked; actual CentOS 7 / Abaqus numerical execution has not been tested in this integration session. Read [Linux installation](docs/install-linux.md).
 
 
+### v1.0.0 official application ZIPs (prepared for GitHub Releases)
+
+The v1.0.0 downloadable **program packages**, distinct from auto-generated GitHub source archives, are:
+
+- `ODB2VTU-S_Windows_Validated_v1.0.0.zip` — exact user-tested, unchanged self-extracting `odb2vtu.exe` and SHA-256 record. ZIP SHA-256: `4fd5d2a00e13b3277f9a52e063c692f98d69f6967488472a2d0520ce3ead6359`.
+- `ODB2VTU-S_Workbench_Linux_v1.0.0.zip` — ZIP conversion of the complete user-supplied Linux TAR, containing **all 32 original files**, including the 256px icon; executable shell permissions preserved. ZIP SHA-256: `6b61076701047d274ec516f8e6492c8c85e1ac789e180ba6e464e0b0d7b4f1d2`.
+
+These assets must be **manually attached to the v1.0.0 GitHub Release**; checking them into the repository or publishing a tag alone does not upload them. Do not substitute the legacy PS2EXE build for the validated Windows executable. The repository's Linux source still requires the original `src/data_exporter/linux/icons/odb2vtu-s-exporter-256.png` binary (SHA-256 `120ba8f404b9adb08eda957b77cf2791f0543cca46c58eb5a5f0897b86412ef6`) to fully reproduce the uploaded Linux ZIP.
+
 ## Historical v0.2.2 notes — Linux packaging, desktop icon, and in-place update improvements
 
 v0.2.2 was the preceding stable release. It retains the validated v0.2.1

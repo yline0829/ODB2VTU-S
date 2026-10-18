@@ -5,6 +5,13 @@
 **Linux：** 已集成本次提供的 `ODB2VTU-S_Workbench_Linux_v1.0.0.tar.gz` 新源码（SHA-256：`5f6287b12a5ad26245f5ebb6a0242c6c45626252545135b1f0d12bd22899aa23`），适用于 CentOS 7 + SingularityCE + Abaqus 2024。Linux 的 GUI、后端和安装文件独立保存在 `src/data_exporter/linux/`，不覆盖 Windows 已验证代码。已通过 Python 3.6 语法、Bash 语法、离线打包以及隔离安装/卸载测试；本次并未在真实 CentOS 7/Abaqus 环境重新执行数值计算。详见 [Linux 安装说明](docs/install-linux.md)。
 
 
+### v1.0.0 正式程序 ZIP（待作为 GitHub Release 附件上传）
+
+- `ODB2VTU-S_Windows_Validated_v1.0.0.zip`：内含用户实际验证通过、未重新编译的原始 `odb2vtu.exe`，ZIP SHA-256：`4fd5d2a00e13b3277f9a52e063c692f98d69f6967488472a2d0520ce3ead6359`。
+- `ODB2VTU-S_Workbench_Linux_v1.0.0.zip`：由用户提供的完整 Linux TAR 无损转换，共 32 个原始文件（含 256px 图标），保留 Shell 可执行权限；ZIP SHA-256：`6b61076701047d274ec516f8e6492c8c85e1ac789e180ba6e464e0b0d7b4f1d2`。
+
+**注意：** 这两个程序 ZIP 尚需上传到 `v1.0.0` GitHub Release，不能将旧 PS2EXE 自动构建结果替代已验证 Windows EXE。GitHub Linux 源码还需要补入原始 `src/data_exporter/linux/icons/odb2vtu-s-exporter-256.png`（SHA-256：`120ba8f404b9adb08eda957b77cf2791f0543cca46c58eb5a5f0897b86412ef6`），才能与完整 Linux ZIP 逐文件一致。
+
 ## v0.2.2 历史版本 — Linux 安装、桌面图标与原位更新优化
 
 历史版本 v0.2.2。在保留 v0.2.1 已验证的 PVD 权威帧映射与原位增量更新流程基础上，本版本重点修复 Linux Workbench 的安装与桌面集成问题。Linux 版本现在通过标准的用户级 hicolor 图标主题安装应用图标，桌面启动器使用稳定的图标名称，并提供独立的桌面图标修复脚本，以改善 GNOME/Nautilus 环境下的图标显示与刷新。

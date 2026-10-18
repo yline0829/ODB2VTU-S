@@ -25,3 +25,12 @@
 - The original Linux binary resources include `icons/odb2vtu-s-exporter-256.png`; preserve and distribute the original Linux TAR if a source-based build lacks this exact high-resolution icon file.
 - Linux Python 3.6 syntax checks: 22/22; Bash syntax checks: 5/5. In an isolated HOME, install/uninstall retained a dataset sentinel outside the application installation directory.
 - The packaged Linux code is a separate implementation from the Windows self-extracting executable. Numerical behavior in a real CentOS 7, SingularityCE, Abaqus 2024 environment must be validated independently.
+
+## v1.0.0 canonical downloadable ZIPs
+
+The exact prepared release assets are:
+
+- Windows: `ODB2VTU-S_Windows_Validated_v1.0.0.zip` — SHA-256 `4fd5d2a00e13b3277f9a52e063c692f98d69f6967488472a2d0520ce3ead6359`.
+- Linux: `ODB2VTU-S_Workbench_Linux_v1.0.0.zip` — SHA-256 `6b61076701047d274ec516f8e6492c8c85e1ac789e180ba6e464e0b0d7b4f1d2`.
+
+Both are program packages, not generated source archives. The Linux archive contains the complete 32-file user-provided payload. For a bit-for-bit reproducible Linux repository package, commit the original high-resolution PNG at `src/data_exporter/linux/icons/odb2vtu-s-exporter-256.png` (SHA-256 `120ba8f404b9adb08eda957b77cf2791f0543cca46c58eb5a5f0897b86412ef6`). The user-tested Windows EXE must remain unchanged and must not be replaced by a PS2EXE rebuild.

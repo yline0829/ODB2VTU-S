@@ -11,8 +11,6 @@ Windows 包含原始已验证 `odb2vtu.exe`（EXE SHA-256：`bab33ff40ee8a720162
 
 The Windows package contains the unchanged, user-tested executable. The Linux ZIP faithfully reproduces the 32 files in the original user-provided TAR (including the original high-resolution icon). Neither ZIP is interchangeable with a legacy PS2EXE build or the auto-generated source archive. Release assets must be uploaded to the GitHub Release; a GitHub tag alone does not publish these ZIPs.
 
-**发布状态 / Publishing status:** 这些附件已在本地准备与校验，仍需在 GitHub Release 上传。The archives are prepared and verified but still require upload to GitHub Releases.
-
 ## 中文
 
 v1.0.0 整合两个平台各自的程序基准，避免以 Windows 已验证源码覆盖 Linux 新实现。

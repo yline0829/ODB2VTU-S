@@ -1,268 +1,40 @@
 # ODB2VTU-S
 
-## v1.0.0 — Validated Windows baseline and new Linux Workbench
+**Selective Abaqus ODB → VTU/PVD export and CPFEM post-processing**
 
-**Windows:** The validated baseline is the user's unchanged, tested `odb2vtu.exe` (SHA-256: `bab33ff40ee8a7201628367f9b020b5736fbe880c703ca24f277fe1c55236c98`). The Windows GUI and related backend source was extracted from its 31 embedded resources; the launcher binary itself is preserved unchanged. See [baseline and provenance](docs/validated-v1.0.0.md).
+[English](README.md) | [简体中文](README.zh-CN.md) · [Releases](https://github.com/yline0829/ODB2VTU-S/releases) · [MIT License](LICENSE)
 
-**Linux:** The v1.0.0 CentOS 7 / SingularityCE / Abaqus 2024 Workbench is now based on the separate user-supplied Linux source distribution (`ODB2VTU-S_Workbench_Linux_v1.0.0.tar.gz`, SHA-256: `5f6287b12a5ad26245f5ebb6a0242c6c45626252545135b1f0d12bd22899aa23`). Its GUI and backend remain isolated under `src/data_exporter/linux/` so that Linux revisions do not overwrite the user-validated Windows code. Python 3.6 syntax, Shell syntax, packaging and isolated install/uninstall were checked; actual CentOS 7 / Abaqus numerical execution has not been tested in this integration session. Read [Linux installation](docs/install-linux.md).
+ODB2VTU-S is a Windows/Linux workbench for extracting selected results from large Abaqus ODB files and preparing ParaView visualizations and CPFEM analyses.
 
+## Unified Workbench
 
-### v1.0.0 official application ZIPs (prepared for GitHub Releases)
+The Windows interface follows a five-step workflow:
 
-The v1.0.0 downloadable **program packages**, distinct from auto-generated GitHub source archives, are:
+**1. Data Source → 2. Target States → 3. Field Variables → 4. Output → 5. Export**
 
-- `ODB2VTU-S_Windows_Validated_v1.0.0.zip` — exact user-tested, unchanged self-extracting `odb2vtu.exe` and SHA-256 record. ZIP SHA-256: `4fd5d2a00e13b3277f9a52e063c692f98d69f6967488472a2d0520ce3ead6359`.
-- `ODB2VTU-S_Workbench_Linux_v1.0.0.zip` — ZIP conversion of the complete user-supplied Linux TAR, containing **all 32 original files**, including the 256px icon; executable shell permissions preserved. ZIP SHA-256: `6b61076701047d274ec516f8e6492c8c85e1ac789e180ba6e464e0b0d7b4f1d2`.
+The workspace provides a selection summary, output settings, execution logs, light/dark themes, and Chinese/English switching. Additional tools, including history curves, grain-level analysis, CPFEM processing, and safe recovery, are accessible from the menus.
 
-These assets must be **manually attached to the v1.0.0 GitHub Release**; checking them into the repository or publishing a tag alone does not upload them. Do not substitute the legacy PS2EXE build for the validated Windows executable. The repository's Linux source still requires the original `src/data_exporter/linux/icons/odb2vtu-s-exporter-256.png` binary (SHA-256 `120ba8f404b9adb08eda957b77cf2791f0543cca46c58eb5a5f0897b86412ef6`) to fully reproduce the uploaded Linux ZIP.
+![ODB2VTU-S exporter interface](docs/images/odb2vtu-s-exporter.png)
 
-## Historical v0.2.2 notes — Linux packaging, desktop icon, and in-place update improvements
+## Features
 
-v0.2.2 was the preceding stable release. It retains the validated v0.2.1
-PVD-authoritative incremental-update workflow while improving Linux
-installation and desktop integration. The Linux Workbench now installs the
-application icon through the standard per-user hicolor icon theme, recreates
-the desktop launcher with a stable icon name, and provides a dedicated icon
-repair script for GNOME/Nautilus environments. Reinstallation replaces the
-existing Workbench installation in place without creating migration
-directories and does not remove user ODB/VTU/PVD/INP data.
+- **Selective export:** choose instances, element/grain sets, Steps, Frames, and fields; write ParaView-compatible VTU/PVD.
+- **Incremental updates:** Frame/Field **Merge** preserves existing data by default; **Sync** explicitly aligns output with the current selection.
+- **In-place mode:** optionally update existing VTUs in their original directory with validation and rollback protection.
+- **Analysis:** GrainID, Mises stress, initial IPF, GND evolution, field differences, and grain ranking.
+- **Post-processing:** history curves, friction-related outputs, PEEQCP reconstruction, and diagnostic/recovery tools.
 
-The release is independent of Dassault Systèmes; Abaqus is required to read ODBs.
+## Download and requirements
 
+**[Download v1.0.0](https://github.com/yline0829/ODB2VTU-S/releases/tag/v1.0.0)**
 
-### Selective Abaqus ODB to ParaView & CPFEM Post-Processing Toolkit
+| Platform | Package | Requirements |
+| --- | --- | --- |
+| Windows | `ODB2VTU-S_Windows_v1.0.0.zip` | Windows, PowerShell/.NET, licensed Abaqus |
+| Linux | `ODB2VTU-S_Workbench_Linux_v1.0.0.zip` or `.tar.gz` | Python 3 + Tkinter; designed for CentOS 7, SingularityCE, Abaqus 2024 |
 
-**English** | [简体中文](README.zh-CN.md)
+The Windows package contains the original **user-tested EXE**; Linux installation, packaging, and syntax were checked independently. Running ODB operations requires your own licensed Abaqus installation with `odbAccess`. Back up important datasets before in-place updates or ODB write-back.
 
-[![Latest Release](https://img.shields.io/github/v/release/yline0829/ODB2VTU-S?display_name=tag&sort=semver)](https://github.com/yline0829/ODB2VTU-S/releases/latest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Windows](https://img.shields.io/badge/Windows-supported-0078D6?logo=windows&logoColor=white)
-![Linux](https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&logoColor=black)
+[Windows guide](docs/install-windows.md) · [Linux guide](docs/install-linux.md) · [Incremental export](docs/incremental-export.md) · [PEEQCP](docs/peeqcp.md) · [v1.0.0 provenance](docs/validated-v1.0.0.md)
 
-**Selective post-processing for large Abaqus ODB files.** Cross-platform tools for **Abaqus/CPFEM**, focused on selective ODB extraction, ParaView visualization, grain-resolved field analysis, GND evolution, tribological history data, and PEEQCP reconstruction.
-
-> This project is independent of Dassault Systèmes. Abaqus is required to read/write ODB files; no Abaqus libraries or binaries are distributed here.
-
-## Download
-
-For most users, the recommended entry point is the **latest GitHub Release**:
-
-**[Download the latest release](https://github.com/yline0829/ODB2VTU-S/releases/latest)**
-
-Current release packages use the **ODB2VTU-S** naming scheme:
-
-- **Windows — ODB2VTU-S Exporter**
-- **Windows — ODB2VTU-S CPFEM Postprocessor**
-- **Linux — Combined Tools**
-
-The repository itself is the maintainable source tree. The latest development ZIPs can be obtained from a successful **GitHub Actions → Build packages** run; tagged release assets are distributed via **Releases**.
-
-## Overview
-
-The toolkit currently contains two complementary applications. The **S** in **ODB2VTU-S** stands for **Selective**, emphasizing selective access to large ODB databases:
-
-| Application | Main purpose |
-|---|---|
-| **ODB2VTU-S Exporter** | Large-ODB selective ODB → VTU/PVD export, arbitrary Step/Frame field comparison, ParaView-ready fields, GrainID, Initial IPF, Mises, GND differences, grain-level extrema, and History/Curve data |
-| **ODB2VTU-S CPFEM Postprocessor** | RP history extraction and frame-by-frame PEEQCP reconstruction/write-back using a physically matched StepTime sampling schedule |
-
-## Key capabilities
-
-### Selective ODB → VTU/PVD instead of full-database conversion
-
-ODB2VTU-S Exporter is designed for large Abaqus ODB files. Users can select the **instance, grain/element region, Step, Frame, and Field Output** that are actually needed, then export only those states to ParaView-compatible VTU/PVD files. This avoids converting an entire multi-GB or multi-hundred-GB ODB when only a small set of physical states is required.
-
-### Arbitrary Step/Frame time-series construction
-
-A ParaView time series can be assembled from **arbitrary Step/Frame combinations**, not only consecutive frames. Multiple Steps can be selected together and specific frames can be added to the export schedule, which is useful for comparing equivalent physical positions across repeated friction cycles.
-
-### Generic SDV / scalar-field difference comparison
-
-For scalar element fields, including user-defined **SDV variables**, the exporter can calculate a target-reference difference between arbitrary stored states:
-
-```text
-DELTA_Field = Field(target Step/Frame) - Field(reference Step/Frame)
-```
-
-The reference Step and reference Frame are user-selectable. This makes it possible to compare, for example, `SDV29`, `SDV66`, `SDV104`, or another scalar element variable between selected loading/friction states and visualize the resulting difference directly in ParaView.
-
-### Grain-aware post-processing
-
-The toolkit reconstructs `GrainID`, supports an `<All Grains>` virtual region, correlates field extrema with grains, ranks Top-N grains, and can export only the selected extreme grains so unrelated grains are completely absent from the ParaView geometry.
-
-### CPFEM-derived fields beyond native Abaqus output
-
-Current model-specific derived capabilities include **Mises stress**, **Initial HCP-Ti IPF**, **18-slip-system GND evolution**, sliding-reference GND increments, and reconstructed **PEEQCP** from `Fp = SDV1–SDV9`.
-
-### Physically matched sampling for cyclic friction
-
-For PEEQCP comparison, the postprocessor traverses all stored frames for accumulation while saving:
-- indentation/normal loading: first + last frame
-- each sliding cycle: **T0 / T25 / T50 / T75 / T100 by StepTime**
-
-If a target time is not stored exactly, the nearest actual ODB frame is selected.
-
-> Note: the current generic field-comparison feature is a **stored-frame difference**, not continuous temporal interpolation between two frames. True time interpolation of arbitrary fields can be added as a future feature.
-
-## Incremental frame / field updates
-
-ODB2VTU-S v0.2 uses a two-level export policy:
-
-- **Frame Merge** (default): selected Step/Frame states are added or updated; previously exported states remain active.
-- **Frame Sync**: the active PVD timeline is synchronized to the current Step/Frame selection.
-- **Field Merge** (default): existing variables in a frame are preserved and newly selected variables are added.
-- **Field Sync**: selected frames are rebuilt to match the current variable selection, which is the explicit variable-deletion operation.
-
-The safe default is therefore **Merge + Merge**: repeated export does not silently delete old frames or fields.
-
-See [Incremental export logic](docs/incremental-export.md) for the complete state-management rules.
-
-### Performance-optimized field updates (introduced in v0.2.0)
-
-The current **v0.2.2 source** includes the field-level incremental export path, in addition to frame-level skipping:
-
-- `unchanged`: the selected Step/Frame has the same recorded source revision and output configuration; **no VTU rewrite**.
-- `INCREMENTAL`: reuse unchanged field arrays from the existing ASCII VTU (bounded-memory streaming), read only new native SDVs or changed derived-field groups from the ODB, and safely replace the complete VTU.
-- `FULL`: a brand-new frame or a frame whose existing data cannot be safely reused is exported in full. It still benefits from per-run GND/IPF/reference caching, shared GND SDV reads and batched ASCII writing.
-
-Existing names are discovered from the output folder and matched by **ODB Step name + zero-based Frame index**; existing names remain unchanged. The leading six-digit serial in a legacy filename is an *export-file number*, not the ODB frame index. New frames receive an unused serial.
-
-For **subsequent SDV additions**, use **Frame Merge + Field Merge**, select the target frames and **only the new SDVs**. Previously exported native fields, Initial IPF and GND differences remain in the VTU even if they are **not selected again**. If a derived-field family is explicitly requested with changed parameters, that family is recomputed. **Field Sync** instead removes previously exported fields/derived families that are not currently selected. **Frame Sync** narrows the active PVD timeline to only the selected frames, independent of the field policy.
-
-**Measured incremental case (user validation, 2026-10-15):** approximately **242 s/frame before optimization** versus **45 s/frame after optimization** for a previously exported friction/CPFEM model while adding SDVs (about **5.4× faster**, **81% less elapsed time**). Output fields were checked by the user. These are workload-specific, **not a benchmark for the first-time `FULL` export**, whose performance has not been measured here.
-
-The exporter still writes complete VTU files safely; it does **not** modify the interior of an existing VTU in place. Large new exports remain dependent on ODB data volume, field counts and disk performance. Do not run two exporters against the same PVD concurrently. Back up existing VTU/PVD/manifest outputs before testing a new build.
-
-See [incremental export implementation and limitations](docs/incremental-export.md).
-
-## Screenshots
-
-### 1. ODB2VTU-S Exporter
-
-Select an ODB, instance, grain region, analysis steps, frames, and output variables. Multi-step ParaView time-series export supports arbitrary Step/Frame states without converting the entire ODB.
-
-<p align="center">
-  <img src="docs/images/odb2vtu-s-exporter.png" width="95%" alt="ODB2VTU-S Exporter">
-</p>
-
-### 2. ODB2VTU-S CPFEM Postprocessor
-
-The CPFEM utility handles RP history data and PEEQCP reconstruction. PEEQCP is accumulated through all stored frames while selected physical states are retained for comparison and optional write-back.
-
-<p align="center">
-  <img src="docs/images/odb2vtu-s-cpfem-postprocessor.png" width="72%" alt="ODB2VTU-S CPFEM Postprocessor">
-</p>
-
-### 3. ParaView — reconstructed PEEQCP
-
-Exported PVD/VTU data can be opened directly in ParaView. The example below shows the reconstructed PEEQCP field in a friction/CPFEM model.
-
-<p align="center">
-  <img src="docs/images/paraview-peeqcp.png" width="95%" alt="ParaView PEEQCP visualization">
-</p>
-
-### 4. ParaView — initial crystallographic orientation
-
-ODB2VTU-S Exporter can reconstruct the initial grain orientation from per-grain material Euler angles in the INP and export an HCP-Ti IPF-related field for ParaView visualization.
-
-<p align="center">
-  <img src="docs/images/paraview-initial-ipf.png" width="95%" alt="ParaView initial IPF visualization">
-</p>
-
-## Applications
-
-### ODB2VTU-S Exporter
-
-- Selective ODB → **VTU/PVD** export for ParaView
-- Large-ODB workflow: read only selected instances, sets, steps, frames, and fields
-- `GrainID` reconstruction and `<All Grains>` selection
-- Derived **von Mises stress**
-- **Initial HCP-Ti IPF** from per-grain material Euler angles in the INP
-- Field extrema / grain correlation analysis
-- Top-N / extreme-band grain-only VTU export
-- History/curve CSV export
-- 18-slip-system GND evolution from `gnd_field.dat` vs. `SDV11–SDV28`
-- Sliding-start GND increment using the first sliding frame or the previous step's last frame as reference
-
-### ODB2VTU-S CPFEM Postprocessor
-
-- RP history extraction: `U1/U2`, `RF1/RF2`, `CF1/CF2`, COF
-- Frame-by-frame PEEQCP reconstruction from `Fp = SDV1–SDV9`
-- Target-state saving:
-  - indentation/normal-loading step: first + last frame
-  - each sliding cycle: **T0/T25/T50/T75/T100 by StepTime**
-- Nearest actual ODB frame is selected when a target StepTime is not stored exactly
-- PEEQCP can be written back to those selected ODB frames
-- Linux live progress logging and completion notifications
-
-## Repository layout
-
-```text
-src/
-  data_exporter/
-    backend/     # Abaqus-Python ODB backends
-    windows/     # PowerShell/WPF GUI
-    linux/       # Python/Tk GUI
-  postprocess/
-    backend/     # history + PEEQCP backend
-    windows/     # PowerShell GUI
-    linux/       # Python/Tk GUI
-packaging/linux/ # desktop installer/uninstaller
-scripts/         # release builder
-docs/            # methods and installation notes
-examples/        # small, non-proprietary examples
-```
-
-## Requirements
-
-- A licensed Abaqus installation providing `odbAccess`
-- An Abaqus command such as `abaqus` or `abq2024`
-- ParaView for VTU/PVD visualization
-- Windows: Windows PowerShell / WPF
-- Linux GUI: Python 3 + Tkinter
-
-For containerized Abaqus on Linux, set the GUI's **Abaqus command** to the full prefix, for example:
-
-```bash
-singularity exec /path/to/abaqus2024.sif /opt/run_abaqus.sh
-```
-
-The application appends `python <backend.py> ...` automatically.
-
-## Important model assumptions
-
-Some CPFEM-derived functions are model-specific. In particular, the current GND mapping assumes:
-
-- `SDV11–SDV28` are the 18 slip-system GND densities
-- `gnd_field.dat` column 1 is Abaqus element label
-- columns 2–10 are nine initial GND/Burgers-direction densities
-- each direction is split equally between its paired slip systems
-
-See [docs/gnd_mapping.md](docs/gnd_mapping.md) before using the GND tools with another UMAT.
-
-PEEQCP reconstruction assumes `SDV1–SDV9` contain `Fp` in the documented Fortran column-major mapping. See [docs/peeqcp.md](docs/peeqcp.md).
-
-## Installation
-
-- [Windows](docs/install-windows.md)
-- [Linux](docs/install-linux.md)
-
-For normal users, downloading a packaged asset from **Releases** is recommended.
-
-## Build release packages
-
-From a normal Python 3 environment:
-
-```bash
-python scripts/build_release.py
-```
-
-Generated ZIP files are written to `dist/` and are intentionally ignored by Git.
-
-## Development status
-
-The current validated Windows baseline is **v1.0.0**. It includes the v0.2 frame/field Merge/Sync and field-level incremental export architecture, the v0.2.1 PVD-authoritative in-place update workflow, and the v0.2.2 Linux packaging and desktop icon fixes. GitHub Release assets may lag behind the development source; verify the asset version before downloading. The **v0.2.2** release further fixes Linux desktop icon installation and in-place reinstallation; the earlier **v0.1.2** release introduced the first dedicated desktop icons and Linux usability improvements. Please report model/version compatibility issues through GitHub Issues.
-
-## License
-
-MIT License. See [LICENSE](LICENSE).
+*Independent project; not affiliated with Dassault Systèmes. No proprietary Abaqus components are distributed.*

@@ -2,6 +2,11 @@
 
 **Abaqus ODB 选择性导出至 VTU/PVD · CPFEM 数据后处理工具**
 
+[![Latest Release](https://img.shields.io/github/v/release/yline0829/ODB2VTU-S?display_name=tag&sort=semver)](https://github.com/yline0829/ODB2VTU-S/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Windows](https://img.shields.io/badge/Windows-supported-0078D6?logo=windows&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&logoColor=black)
+
 [English](README.md) | [简体中文](README.zh-CN.md) · [下载软件](https://github.com/yline0829/ODB2VTU-S/releases) · [MIT 开源许可](LICENSE)
 
 ODB2VTU-S 是面向 Windows/Linux 的统一工作台，用于从大型 Abaqus ODB 中选择性读取结果，导出 ParaView 可视化数据，并进行晶粒尺度与 CPFEM 后处理。

@@ -2,6 +2,11 @@
 
 **Selective Abaqus ODB → VTU/PVD export and CPFEM post-processing**
 
+[![Latest Release](https://img.shields.io/github/v/release/yline0829/ODB2VTU-S?display_name=tag&sort=semver)](https://github.com/yline0829/ODB2VTU-S/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Windows](https://img.shields.io/badge/Windows-supported-0078D6?logo=windows&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&logoColor=black)
+
 [English](README.md) | [简体中文](README.zh-CN.md) · [Releases](https://github.com/yline0829/ODB2VTU-S/releases) · [MIT License](LICENSE)
 
 ODB2VTU-S is a Windows/Linux workbench for extracting selected results from large Abaqus ODB files and preparing ParaView visualizations and CPFEM analyses.

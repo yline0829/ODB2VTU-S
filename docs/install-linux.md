@@ -49,7 +49,16 @@ tar -xzf ODB2VTU-S_Workbench_Linux_v1.0.0.tar.gz
 cd ODB2VTU-S_Workbench_Linux_v1.0.0
 ```
 
-也可使用对应版本构建产物中的 Linux ZIP。进入安装目录后：
+或者使用 **v1.0.0 正式 Linux ZIP**（与用户提供的 TAR 32 个原始文件逐字节一致）：
+
+```bash
+unzip -q ODB2VTU-S_Workbench_Linux_v1.0.0.zip
+cd ODB2VTU-S_Workbench_Linux_v1.0.0
+```
+
+正式 ZIP SHA-256：`6b61076701047d274ec516f8e6492c8c85e1ac789e180ba6e464e0b0d7b4f1d2`。解压包自带原始 128/256px 图标；ZIP 已保存 Shell 脚本的 Unix 可执行权限。若使用的解压工具不恢复权限，可执行 `chmod +x ./*.sh`。
+
+进入安装目录后：
 
 ```bash
 chmod +x install_clickable.sh

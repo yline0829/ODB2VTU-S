@@ -23,13 +23,8 @@ cp(ROOT/'src/data_exporter/backend',win)
 cp(ROOT/'src/postprocess/backend',win)
 cp(ROOT/'assets/icons',win/'icons')
 zipout(win,'ODB2VTU-S_Workbench_Windows_Portable_v%s.zip'%VERSION)
+# Linux v1.0.0 is a self-contained, independently sourced workbench.
+# Never copy shared Windows backends over Linux-specific modules.
 lin=WORK/'ODB2VTU-S_Workbench_Linux';lin.mkdir()
 cp(ROOT/'src/data_exporter/linux',lin)
-cp(ROOT/'src/data_exporter/backend',lin)
-cp(ROOT/'src/postprocess/backend',lin)
-shutil.copy2(ROOT/'scripts/diagnose_output_readonly.py',lin/'diagnose_output_readonly.py')
-cp(ROOT/'assets/icons',lin/'icons')
-for script in ('install_clickable.sh','fix_desktop_icon.sh','uninstall_clickable.sh'):
-    shutil.copy2(ROOT/'packaging/linux'/script,lin/script)
-    (lin/script).chmod(0o755)
 zipout(lin,'ODB2VTU-S_Workbench_Linux_v%s.zip'%VERSION)

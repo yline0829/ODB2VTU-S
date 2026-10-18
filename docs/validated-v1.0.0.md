@@ -7,7 +7,7 @@
 - Windows primary baseline: exact, unchanged `odb2vtu.exe` with its original self-extracting .NET launcher and 31 embedded resources. User reports successful real-world execution.
 - The Windows PowerShell GUI and Abaqus Python backend in `src/data_exporter/` and `src/postprocess/backend/abaqus_postprocess_master.py` come from the validated EXE's embedded files, byte-for-byte. `Launch_Workbench.ps1` is included.
 - Windows `AppInfo.json` is intentionally retained byte-for-byte with its original `0.2.1-rc10` internal version. The original executable file version remains `0.0.0.0`. Both are historical *embedded metadata*, not newly built 1.0.0 binaries.
-- The existing Linux implementation has **not** been replaced or validated against this Windows EXE. Linux assets are not claimed to be independently validated at v1.0.0.
+- The v1.0.0 Linux implementation is independent, provided by the user as a complete Linux archive. It is not claimed to have been validated by the Windows EXE. Static/packaging/install-uninstall checks passed; a real Abaqus numeric run was not performed in this session.
 - `.NET` self-extractor original C#/IL source is not available as source; the executable is the canonical launcher binary. The old `packaging/windows/build_exe.ps1` builds a **different** PS2EXE launcher and is not a reproducible build of the validated EXE.
 
 ## Integrity and distribution
@@ -17,3 +17,11 @@
 3. All 31 extracted resources are recorded with SHA-256 in `docs/validated-v1.0.0-manifest.json`. Extracted code is for auditing and future development.
 4. The user has verified its Windows functionality. No new Windows or Abaqus runtime test has been carried out for the GitHub source revision.
 5. Tag v1.0.0 and create its release after checking that the branch source matches this manifest; attach the original executable and the source distribution, not a PS2EXE rebuild.
+
+## Linux v1.0.0 source provenance
+
+- Uploaded canonical distribution: `ODB2VTU-S_Workbench_Linux_v1.0.0.tar.gz` (SHA-256 `5f6287b12a5ad26245f5ebb6a0242c6c45626252545135b1f0d12bd22899aa23`).
+- The tarball contains 28 standalone source/documentation files and 4 icon resources. The 28 source/documentation files are stored independently under `src/data_exporter/linux/`, rather than overwriting shared Windows backend files.
+- The original Linux binary resources include `icons/odb2vtu-s-exporter-256.png`; preserve and distribute the original Linux TAR if a source-based build lacks this exact high-resolution icon file.
+- Linux Python 3.6 syntax checks: 22/22; Bash syntax checks: 5/5. In an isolated HOME, install/uninstall retained a dataset sentinel outside the application installation directory.
+- The packaged Linux code is a separate implementation from the Windows self-extracting executable. Numerical behavior in a real CentOS 7, SingularityCE, Abaqus 2024 environment must be validated independently.

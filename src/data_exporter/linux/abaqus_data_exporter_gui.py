@@ -29,8 +29,26 @@ CPFEM_MASTER_PY = APP_DIR / 'abaqus_postprocess_master.py'
 AUDIT_PY = APP_DIR / 'diagnose_output_readonly.py'
 RECOVERY_PY = APP_DIR / 'odb_recovery_safe.py'
 LEGACY_PY = APP_DIR / 'odb_legacy_migration.py'
-WORK_DIR = APP_DIR / '.ade_runtime'
-WORK_DIR.mkdir(exist_ok=True)
+def _runtime_dir():
+    # Transient GUI state (metadata.json, fields.json, selected states, audit
+    # report) must not live inside the program directory: a shared or read-only
+    # installation path cannot be written. Prefer the per-user cache directory
+    # and fall back to the program directory only when nothing else is writable.
+    base = os.environ.get('XDG_CACHE_HOME') or os.path.join(os.path.expanduser('~'), '.cache')
+    cand = Path(base) / 'odb2vtu-s'
+    try:
+        cand.mkdir(parents=True, exist_ok=True)
+        probe = cand / '.write_probe'
+        probe.write_text('ok')
+        probe.unlink()
+        return cand
+    except Exception:
+        fallback = APP_DIR / '.ade_runtime'
+        fallback.mkdir(exist_ok=True)
+        return fallback
+
+
+WORK_DIR = _runtime_dir()
 META_JSON = WORK_DIR / 'metadata.json'
 FIELDS_JSON = WORK_DIR / 'fields.json'
 CURVE_META_JSON = WORK_DIR / 'curve_metadata.json'
@@ -43,8 +61,10 @@ COF = 'COF=|RF1|/|CF2|'
 
 class App(tk.Tk):
     def __init__(self):
-        super().__init__()
-        self.title('ODB2VTU-S Workbench v0.2.1 — Linux')
+        # WM_CLASS must match StartupWMClass in the .desktop entry, otherwise
+        # GNOME shows a second, generic Tk launcher while the window is open.
+        super().__init__(className='odb2vtu-s-workbench')
+        self.title('ODB2VTU-S Workbench v1.0.0 — Linux')
         self.geometry('1320x820')
         self.minsize(1080, 700)
         self.lang = 'zh'
@@ -152,13 +172,13 @@ class App(tk.Tk):
         for tab, original in self._tab_source_labels.items():
             self.nb.tab(tab, text=translate(original, self.lang))
         self._build_app_menu()
-        self.title('ODB2VTU-S 统一工作台 v0.2.1 — Linux' if self.lang == 'zh'
-                   else 'ODB2VTU-S Workbench v0.2.1 — Linux')
+        self.title('ODB2VTU-S 统一工作台 v1.0.0 — Linux' if self.lang == 'zh'
+                   else 'ODB2VTU-S Workbench v1.0.0 — Linux')
         if getattr(self, 'language_var', None) is not None:
             self.language_var.set('中文' if self.lang == 'zh' else 'English')
         # Display-only combobox text; backend uses stable selected indices.
         options = (
-            (self.gnd_mode_cb, ('仅18滑移系',), ('18 slip systems only',)),
+            (self.gnd_mode_cb, ('仅18滑移系','18滑移系+9方向'), ('18 slip systems only','18 slips + 9 directions')),
             (self.gnd_slide_ref_cb, ('滑动第一帧','滑动前一步最后帧'),
                                      ('First sliding frame','Last frame of preceding step')),
             (self.frame_policy_cb, ('合并／保留既有帧','同步当前所选帧'),
@@ -504,7 +524,7 @@ class App(tk.Tk):
         gr1=ttk.Frame(gnd); gr1.pack(fill='x')
         ttk.Checkbutton(gr1,text='计算 gnd_field.dat 与 SDV11–28 差值',variable=self.gnd_diff_var).pack(side='left')
         ttk.Label(gr1,text='输出').pack(side='left',padx=(12,3))
-        self.gnd_mode_cb=ttk.Combobox(gr1,textvariable=self.gnd_mode_var,state='readonly',width=38,values=['仅18滑移系 / 18 slips only'])
+        self.gnd_mode_cb=ttk.Combobox(gr1,textvariable=self.gnd_mode_var,state='readonly',width=46,values=['仅18滑移系 / 18 slips only','18滑移系+9方向 / 18 slips + 9 directions'])
         self.gnd_mode_cb.pack(side='left')
         gr2=ttk.Frame(gnd); gr2.pack(fill='x',pady=(5,0))
         ttk.Label(gr2,text='gnd_field.dat').pack(side='left')
@@ -517,7 +537,7 @@ class App(tk.Tk):
             '滑动第一帧 / First sliding frame',
             '滑动前一步最后帧 / Previous-step last frame'])
         self.gnd_slide_ref_cb.pack(side='left')
-        ttk.Label(gnd,text='DAT差值：当前SDV11–28减去gnd_field.dat初始分配；滑动起点差值：当前SDV11–28减去固定参考帧。两者均只输出18个滑移系，不输出9个Burgers方向。',foreground='#555').pack(anchor='w',pady=(5,0))
+        ttk.Label(gnd,text='DAT差值：当前SDV11–28减去gnd_field.dat初始分配；滑动起点差值：当前SDV11–28减去固定参考帧。DAT差值可选输出「18滑移系」或「18滑移系+9方向」（后者额外输出 DGND_Dir01-09 九个 Burgers 方向增量）；滑动起点差值固定只输出18个滑移系。',foreground='#555').pack(anchor='w',pady=(5,0))
 
         diff=ttk.LabelFrame(right,text='差值 / Difference',padding=8); diff.pack(fill='x',pady=(0,7))
         d=ttk.Frame(diff); d.pack(fill='x')
@@ -890,7 +910,11 @@ class App(tk.Tk):
         derived=[]
         if self.mises_var.get(): derived.append('Mises')
         if self.ipf_var.get(): derived.append('Initial IPF (%s)' % self.ipf_dir.get())
-        if self.gnd_diff_var.get(): derived.append('GND DAT difference (18 slips)')
+        if self.gnd_diff_var.get():
+            _gcb=getattr(self,'gnd_mode_cb',None)
+            derived.append('GND DAT difference (18 slips + 9 directions)'
+                           if (_gcb is not None and _gcb.current()==1)
+                           else 'GND DAT difference (18 slips)')
         if self.gnd_slide_diff_var.get(): derived.append('GND sliding-reference difference (18 slips)')
         if self.delta_var.get():
             derived.append('Difference %s ; ref=%s / Frame %s' % (
@@ -984,7 +1008,8 @@ class App(tk.Tk):
         if self.mises_var.get():common += ['--mises','1']
         if self.ipf_var.get():common += ['--initial-ipf','1','--inp',self.inp_var.get(),'--ipf-dir',self.ipf_dir.get()]
         if self.gnd_diff_var.get():
-            gm='slips'
+            # Linux-only extension: index 1 = 18 slips + 9 Burgers directions.
+            gm='all' if self.gnd_mode_cb.current()==1 else 'slips'
             common += ['--gnd-diff','1','--gnd-dat',self.gnd_dat_var.get(),'--gnd-diff-mode',gm]
         if self.gnd_slide_diff_var.get():
             sr='previous_last' if self.gnd_slide_ref_cb.current() == 1 else 'sliding0'

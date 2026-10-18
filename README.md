@@ -1,8 +1,10 @@
 # ODB2VTU-S
 
-## v1.0.0 — User-validated Windows executable baseline
+## v1.0.0 — Validated Windows baseline and new Linux Workbench
 
-The **v1.0.0 Windows baseline** is the user-tested `odb2vtu.exe` (SHA-256: `bab33ff40ee8a7201628367f9b020b5736fbe880c703ca24f277fe1c55236c98`). This repo's Windows GUI and related backend sources have been synchronized from the 31 embedded resources in that executable. See [v1.0.0 baseline and limitations](docs/validated-v1.0.0.md). The Linux application remains the existing implementation and has **not** been validated by testing this Windows executable.
+**Windows:** The validated baseline is the user's unchanged, tested `odb2vtu.exe` (SHA-256: `bab33ff40ee8a7201628367f9b020b5736fbe880c703ca24f277fe1c55236c98`). The Windows GUI and related backend source was extracted from its 31 embedded resources; the launcher binary itself is preserved unchanged. See [baseline and provenance](docs/validated-v1.0.0.md).
+
+**Linux:** The v1.0.0 CentOS 7 / SingularityCE / Abaqus 2024 Workbench is now based on the separate user-supplied Linux source distribution (`ODB2VTU-S_Workbench_Linux_v1.0.0.tar.gz`, SHA-256: `5f6287b12a5ad26245f5ebb6a0242c6c45626252545135b1f0d12bd22899aa23`). Its GUI and backend remain isolated under `src/data_exporter/linux/` so that Linux revisions do not overwrite the user-validated Windows code. Python 3.6 syntax, Shell syntax, packaging and isolated install/uninstall were checked; actual CentOS 7 / Abaqus numerical execution has not been tested in this integration session. Read [Linux installation](docs/install-linux.md).
 
 
 ## Historical v0.2.2 notes — Linux packaging, desktop icon, and in-place update improvements

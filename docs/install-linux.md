@@ -1,6 +1,6 @@
 # ODB2VTU-S — Linux 安装与 Abaqus 环境
 
-ODB2VTU-S v0.2.1 Linux 版采用系统 Python 3 + Tkinter 作为 GUI，ODB 读写后端通过用户本机的 Abaqus Python 执行。
+ODB2VTU-S v1.0.0 Linux 版采用系统 Python 3 + Tkinter 作为 GUI，ODB 读写后端通过用户本机的 Abaqus Python 执行。
 
 ## 适配环境
 
@@ -42,7 +42,14 @@ Linux 工作台与 Windows 版统一支持 **In-place update**。在 **PVD 时�
 
 ## 启动
 
-解压 Linux Workbench ZIP 后：
+解压用户提供的正式 Linux TAR（`ODB2VTU-S_Workbench_Linux_v1.0.0.tar.gz`）后：
+
+```bash
+tar -xzf ODB2VTU-S_Workbench_Linux_v1.0.0.tar.gz
+cd ODB2VTU-S_Workbench_Linux_v1.0.0
+```
+
+也可使用对应版本构建产物中的 Linux ZIP。进入安装目录后：
 
 ```bash
 chmod +x install_clickable.sh
@@ -66,7 +73,7 @@ Linux 桌面目录通过 `xdg-user-dir DESKTOP` 获取，因此不会假定用�
 ./uninstall_clickable.sh
 ```
 
-只删除 ODB2VTU-S 程序、图标和快捷方式，不删除用户的 ODB、VTU、PVD、Manifest、INP 等结果文件。
+只删除 ODB2VTU-S 安装根目录、图标和快捷方式；**请勿将用户的 ODB、VTU、PVD、Manifest、INP 数据存放在 `~/.local/share/odb2vtu-s/workbench` 安装根目录内**，因为卸载程序会删除整个安装根目录。请将项目数据保存在独立目录。
 
 ## 修改 Abaqus 命令
 
@@ -86,3 +93,9 @@ GUI 顶部的 **Abaqus command** 也会显示并使用该启动前缀。
 
 同时安装器还把图标复制到用户级 hicolor 图标目录，便于 GNOME/其他兼容桌面环境通过图标名解析。
 
+
+## v1.0.0 发布基线与测试边界
+
+用户上传的正式 Linux TAR SHA-256：`5f6287b12a5ad26245f5ebb6a0242c6c45626252545135b1f0d12bd22899aa23`。共 32 个文件；源码部署目录为 `src/data_exporter/linux/`。安装、卸载、打包和源代码语法已做静态及隔离检查，但本次尚未在真实 CentOS 7 + Abaqus 2024 容器完成 ODB 数值输出验证。
+
+提示：正式 TAR 包含原始 256x256 图标资源，不能将自动回退到 128x128 图标的其他构建视为完全相同的二进制发布包。

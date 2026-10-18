@@ -1,6 +1,9 @@
-## v1.0.0 正式源码基线 — 已实测通过的 Windows EXE
+## v1.0.0 正式源码基线 — Windows 已验证 EXE 与全新 Linux Workbench
 
-本版本的 **Windows 功能基准**为用户实测通过的 `odb2vtu.exe`，SHA-256：`bab33ff40ee8a7201628367f9b020b5736fbe880c703ca24f277fe1c55236c98`。Windows GUI 与相关 Abaqus Python 后端已按 EXE 内嵌的 31 个资源同步源码；详见 [v1.0.0 基准与限制说明](docs/validated-v1.0.0.md)。Linux 保留原有实现，**不能视为已被这份 Windows EXE 验证**。正式 EXE 原件与其内部旧版元数据保持不变，以便验证哈希和软件可追溯性。
+**Windows：** 唯一功能基准是用户已实际测试通过、未作二进制修改的 `odb2vtu.exe`（SHA-256：`bab33ff40ee8a7201628367f9b020b5736fbe880c703ca24f277fe1c55236c98`）。Windows GUI 与相关后端以原 EXE 内嵌的 31 个资源为准；完整来源和限制见 [v1.0.0 基准说明](docs/validated-v1.0.0.md)。
+
+**Linux：** 已集成本次提供的 `ODB2VTU-S_Workbench_Linux_v1.0.0.tar.gz` 新源码（SHA-256：`5f6287b12a5ad26245f5ebb6a0242c6c45626252545135b1f0d12bd22899aa23`），适用于 CentOS 7 + SingularityCE + Abaqus 2024。Linux 的 GUI、后端和安装文件独立保存在 `src/data_exporter/linux/`，不覆盖 Windows 已验证代码。已通过 Python 3.6 语法、Bash 语法、离线打包以及隔离安装/卸载测试；本次并未在真实 CentOS 7/Abaqus 环境重新执行数值计算。详见 [Linux 安装说明](docs/install-linux.md)。
+
 
 ## v0.2.2 历史版本 — Linux 安装、桌面图标与原位更新优化
 
@@ -244,7 +247,7 @@ python scripts/build_release.py
 
 ## 开发状态
 
-当前已验证 Windows 基线为 **v1.0.0**，Linux 代码仍保留此前 v0.2.2 实现，包含 Frame/Field 两级 Merge/Sync、文件夹 VTU 识别、变量级增量复用、参考数据跨帧缓存，以及 Linux 安装、桌面图标和原位重新安装修复。**此前 GitHub Releases 发布的 v0.2.2 资产为历史版本**，请以具体 ZIP 文件名和版本号为准。v0.2.2 进一步修复 Linux 桌面图标安装与 Workbench 原位重新安装流程；此前 v0.1.2 首次加入独立桌面图标和 Linux 小屏幕交互改善。
+当前已验证 Windows 基线为 **v1.0.0**，Linux v1.0.0 源码已按新上传版本独立集成，包含 Frame/Field 两级 Merge/Sync、文件夹 VTU 识别、变量级增量复用、参考数据跨帧缓存，以及 Linux 安装、桌面图标和原位重新安装修复。**此前 GitHub Releases 发布的 v0.2.2 资产为历史版本**，请以具体 ZIP 文件名和版本号为准。v0.2.2 进一步修复 Linux 桌面图标安装与 Workbench 原位重新安装流程；此前 v0.1.2 首次加入独立桌面图标和 Linux 小屏幕交互改善。
 
 如果遇到 Abaqus 版本兼容、特定单元类型、场变量映射或工作流问题，欢迎通过 GitHub **Issues** 提交。
 

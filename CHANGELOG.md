@@ -5,6 +5,13 @@
 - Keep embedded old version strings unchanged to preserve byte-for-byte fidelity to the validated executable.
 - Document binary SHA-256, source manifest, Linux non-validation, and differing PS2EXE packaging.
 
+### Linux v1.0.0 source integration (2026-10-18)
+- Integrate the user's new CentOS 7 / SingularityCE / Abaqus 2024 Linux Workbench separately from the validated Windows backend.
+- Preserve all 28 Linux source/documentation files and published checksums for the complete Linux TAR archive (32 files including icons).
+- Prevent Windows backend sources from overwriting Linux-specific modules when producing Linux ZIP distributions.
+- Verify Python 3.6 syntax (22/22), Shell syntax (5/5), isolated installation/uninstallation and all existing repository regression tests.
+- Keep Windows executable and its known-good binary unchanged; real Abaqus runtime tests for Linux remain outside this check.
+
 ## [0.2.2] - 2026-10-16
 
 ### Linux packaging and desktop icon fix

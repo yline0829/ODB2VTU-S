@@ -23,7 +23,7 @@ def main():
                 sets = []
             grain_sets = [
                 s for s in sets
-                if re.match(r"^GRAIN[_-]?\\d+(?:[_-]?SET)?$", str(s).upper())
+                if re.match(r"^GRAIN[_-]?\d+(?:[_-]?SET)?$", str(s).upper())
                 or (str(s).upper().startswith("GRAIN") and str(s).upper().endswith("_SET"))
             ]
             info["instances"][iname] = {

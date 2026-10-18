@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-param([string]$MainScript = "")
+param([switch]$NoExit)
 $ErrorActionPreference = 'Stop'
 $folder = Split-Path -Parent $MyInvocation.MyCommand.Path
 $files = @(Get-ChildItem -LiteralPath $folder -Filter '*.ps1' -File)
@@ -24,6 +24,10 @@ foreach ($f in $files) {
         Write-Host ('[OK] PowerShell 5.1 syntax: ' + $f.Name)
     }
 }
-if ($failed) { exit 3 }
-Write-Host '[SUCCESS] All PowerShell scripts passed startup checks.' -ForegroundColor Green
-exit 0
+if ($failed) {
+    # -NoExit lets single-process launchers dot-source this file and read $failed.
+    if (-not $NoExit) { exit 3 }
+} else {
+    Write-Host '[SUCCESS] All PowerShell scripts passed startup checks.' -ForegroundColor Green
+    if (-not $NoExit) { exit 0 }
+}

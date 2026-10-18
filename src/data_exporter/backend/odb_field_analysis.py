@@ -4,10 +4,7 @@ import os, sys, csv, math, argparse, traceback
 from collections import defaultdict
 from odbAccess import openOdb
 from odb_export_vtu import parse_bbox, selected_elements, normalize_data, centroid, write_vtu
-
-
-def sanitize(s):
-    return "".join(c if c.isalnum() or c in "_-" else "_" for c in str(s))
+from odb_export_state import safe_step_name as sanitize
 
 
 def scalar_from_value(v, token, field_output, component_index):

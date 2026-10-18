@@ -119,6 +119,8 @@ def normalize_data(data):
 def average_rows(rows, ncomp):
     if not rows:
         return [float("nan")] * ncomp
+    if len(rows) == 1:
+        return list(rows[0])
     out = [0.0] * ncomp
     for r in rows:
         for j in range(ncomp):
@@ -448,12 +450,6 @@ GND_DIR_SLIP_PAIRS = (
     (13, 15), # DAT col 9:  [11-23]   -> SDV23 / SDV25
     (16, 18), # DAT col 10: [-12-13]  -> SDV26 / SDV28
 )
-GND_DIR_LABELS = (
-    "11m20", "1m210", "2m1m10", "m2113", "m1m123",
-    "1m213", "2m1m13", "11m23", "m12m13"
-)
-
-
 def load_gnd_dat(path):
     if not path or not os.path.exists(path):
         raise RuntimeError("gnd_field.dat not found: %s" % path)
@@ -513,7 +509,6 @@ def extract_gnd_difference_arrays(frame, inst, elem_labels, dat_db, mode, existi
     init_total = {}
     curr_total = {}
     delta_total = {}
-    dir_delta = [dict() for _ in range(9)] if mode in ("directions", "all") else []
     slip_delta = [dict() for _ in range(18)]
     coverage = {}
     missing = 0
@@ -527,7 +522,6 @@ def extract_gnd_difference_arrays(frame, inst, elem_labels, dat_db, mode, existi
             init_total[lab] = [float("nan")]
             curr_total[lab] = [float("nan")]
             delta_total[lab] = [float("nan")]
-            for d in dir_delta: d[lab] = [float("nan")]
             for d in slip_delta: d[lab] = [float("nan")]
             continue
 
@@ -552,14 +546,6 @@ def extract_gnd_difference_arrays(frame, inst, elem_labels, dat_db, mode, existi
             curr_total[lab] = [ct]
             delta_total[lab] = [ct - it]
 
-        if dir_delta:
-            for j, pair in enumerate(GND_DIR_SLIP_PAIRS):
-                a,b = pair[0]-1, pair[1]-1
-                if math.isfinite(cur[a]) and math.isfinite(cur[b]):
-                    dir_delta[j][lab] = [cur[a] + cur[b] - float(rho_dir[j])]
-                else:
-                    dir_delta[j][lab] = [float("nan")]
-
         for slip in range(18):
             slip_delta[slip][lab] = [cur[slip] - ini[slip]] if math.isfinite(cur[slip]) else [float("nan")]
 
@@ -573,9 +559,6 @@ def extract_gnd_difference_arrays(frame, inst, elem_labels, dat_db, mode, existi
         "DGND_Total": ("cell", 1, delta_total),
         "GND_DAT_Mask": ("cell", 1, coverage),
     }
-    if mode in ("directions", "all"):
-        for j in range(9):
-            arrays["DGND_Dir%02d_%s" % (j+1, GND_DIR_LABELS[j])] = ("cell", 1, dir_delta[j])
     if mode in ("slips", "all"):
         for slip in range(18):
             arrays["DGND_Slip%02d_SDV%d" % (slip+1, 11+slip)] = ("cell", 1, slip_delta[slip])
@@ -727,6 +710,24 @@ def write_array(f, name, ncomp, order, values, vtk_data_type="Float64"):
     f.write('\n        </DataArray>\n')
 
 
+def write_int_array(f, values, batch=8192):
+    """Batch a 1-D integer array; byte-identical to a single ' '.join line."""
+    parts = []
+    wrote = False
+    for x in values:
+        parts.append(" %d" % x)
+        if len(parts) >= batch:
+            f.write("".join(parts))
+            parts = []
+            wrote = True
+    if parts:
+        f.write("".join(parts))
+        wrote = True
+    if not wrote:
+        f.write(" ")
+    f.write("\n")
+
+
 def write_vtu(path, elems, node_map, arrays, grain_ids=None):
     used_nodes = sorted(set(n for e in elems for n in e.connectivity))
     pindex = dict((lab, i) for i, lab in enumerate(used_nodes))
@@ -742,7 +743,7 @@ def write_vtu(path, elems, node_map, arrays, grain_ids=None):
 
     cell_order = [int(e.label) for e in elems]
 
-    with open(path, "w") as f:
+    with open(path, "w", buffering=1 << 20) as f:
         f.write('<?xml version="1.0"?>\n')
         f.write('<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">\n')
         f.write('  <UnstructuredGrid>\n')
@@ -764,13 +765,13 @@ def write_vtu(path, elems, node_map, arrays, grain_ids=None):
 
         f.write('      <Cells>\n')
         f.write('        <DataArray type="Int64" Name="connectivity" format="ascii">\n')
-        f.write(" " + " ".join(str(x) for x in conn) + "\n")
+        write_int_array(f, conn)
         f.write('        </DataArray>\n')
         f.write('        <DataArray type="Int64" Name="offsets" format="ascii">\n')
-        f.write(" " + " ".join(str(x) for x in offsets) + "\n")
+        write_int_array(f, offsets)
         f.write('        </DataArray>\n')
         f.write('        <DataArray type="UInt8" Name="types" format="ascii">\n')
-        f.write(" " + " ".join(str(x) for x in types) + "\n")
+        write_int_array(f, types)
         f.write('        </DataArray>\n')
         f.write('      </Cells>\n')
 
@@ -841,12 +842,12 @@ def export_frame(odb, instance_name, step_name, frame_index, out_path,
         if arr is not None:
             arrays[name] = arr
         else:
-            arrays[name] = ("cell", 1, dict((lab,[float("nan")]) for lab in elem_labels))
+            arrays[name] = ("cell", 1, {})
 
     if derived_mises:
         arr = extract_mises(frame, inst, elem_labels)
         if arr is None:
-            arrays["Mises"] = ("cell", 1, dict((lab,[float("nan")]) for lab in elem_labels))
+            arrays["Mises"] = ("cell", 1, {})
             print("WARNING: S is missing in this frame; Mises written as NaN.")
         else:
             arrays["Mises"] = arr

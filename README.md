@@ -1,16 +1,21 @@
 # ODB2VTU-S
 
-## v0.2.2 — Linux packaging, desktop icon, and in-place update improvements
+## v1.0.0 — User-validated Windows executable baseline
 
-v0.2.2 is the current stable release. It retains the validated v0.2.1
-PVD-authoritative incremental-update workflow while improving Linux
-installation and desktop integration. The Linux Workbench now installs the
-application icon through the standard per-user hicolor icon theme, recreates
-the desktop launcher with a stable icon name, and provides a dedicated icon
-repair script for GNOME/Nautilus environments. Reinstallation replaces the
-existing Workbench installation in place without creating migration
-directories and does not remove user ODB/VTU/PVD/INP data.
+The **v1.0.0 Windows baseline** is the user-tested `odb2vtu.exe` (SHA-256: `bab33ff40ee8a7201628367f9b020b5736fbe880c703ca24f277fe1c55236c98`). This repo's Windows GUI and related backend sources have been synchronized from the 31 embedded resources in that executable. See [v1.0.0 baseline and limitations](docs/validated-v1.0.0.md). The Linux application remains the existing implementation and has **not** been validated by testing this Windows executable.
 
+
+## v0.2.1 — PVD-authoritative in-place incremental export
+
+v0.2.1 is based on the user's validated rc10 workflow. For legacy PVD/VTU
+datasets without Manifest or ADE signature, use Fast Compatibility,
+Frame Merge + Field Merge, and the explicit In-place Update option.
+Only PVD-referenced VTUs are eligible for reuse; extra historical VTUs are
+preserved without causing false duplicate-frame errors.
+Two representative states receive numerical ODB witness checks; other
+states receive structural/mesh checks. Existing VTU DataArrays are retained.
+Writes use adjacent temporary files, atomic replacement, hard-link rollback
+aliases, and a transaction journal. Keep an independent data backup.
 The release is independent of Dassault Systèmes; Abaqus is required to read ODBs.
 
 
@@ -101,9 +106,9 @@ The safe default is therefore **Merge + Merge**: repeated export does not silent
 
 See [Incremental export logic](docs/incremental-export.md) for the complete state-management rules.
 
-### Performance-optimized field updates (introduced in v0.2.0)
+### Performance-optimized field updates (v0.2.0)
 
-The current **v0.2.2 source** includes the field-level incremental export path, in addition to frame-level skipping:
+The current **v0.2.0 source** includes a real **field-level incremental export** path, in addition to frame-level skipping:
 
 - `unchanged`: the selected Step/Frame has the same recorded source revision and output configuration; **no VTU rewrite**.
 - `INCREMENTAL`: reuse unchanged field arrays from the existing ASCII VTU (bounded-memory streaming), read only new native SDVs or changed derived-field groups from the ODB, and safely replace the complete VTU.
@@ -245,7 +250,7 @@ Generated ZIP files are written to `dist/` and are intentionally ignored by Git.
 
 ## Development status
 
-The current development source is **v0.2.2**. It includes the v0.2 frame/field Merge/Sync and field-level incremental export architecture, the v0.2.1 PVD-authoritative in-place update workflow, and the v0.2.2 Linux packaging and desktop icon fixes. GitHub Release assets may lag behind the development source; verify the asset version before downloading. The **v0.2.2** release further fixes Linux desktop icon installation and in-place reinstallation; the earlier **v0.1.2** release introduced the first dedicated desktop icons and Linux usability improvements. Please report model/version compatibility issues through GitHub Issues.
+The current development source is **v0.2.0** (frame/field Merge/Sync, on-disk VTU inventory, field-level incremental updates and reference-data caching). GitHub Release assets may lag behind the development source; verify the asset version before downloading. The legacy **v0.1.2** release added desktop icons and Linux usability improvements. Please report model/version compatibility issues through GitHub Issues.
 
 ## License
 

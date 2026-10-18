@@ -26,13 +26,5 @@
     "Windows PowerShell 5.1 UTF-8 BOM + fail-fast AST parse check at GUI startup",
     "PVD-authoritative inventory: preserve all unreferenced VTUs without ambiguous-frame abort"
   ],
-  "version": "0.2.1",
-  "launch_exe": "ODB2VTU-S_Exporter.exe",
-  "launch_legacy": "Launch_ODB2VTU-S_Exporter.vbs",
-  "windows_distribution": {
-    "preferred_launcher": "ODB2VTU-S_Exporter.exe",
-    "bundle_layout": "EXE plus external backend scripts in the same directory",
-    "build_tool": "PS2EXE 1.0.18",
-    "architecture": "x64"
-  }
+  "version": "0.2.1-rc10"
 }

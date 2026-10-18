@@ -7,6 +7,7 @@ import csv
 import traceback
 import argparse
 import numpy as np
+from odb_export_state import safe_step_name as sanitize
 
 # When launched from the Linux Tk GUI, stdout is a pipe rather than a terminal.
 # Force line buffering so long-running Abaqus/odbAccess progress is visible live.
@@ -57,10 +58,6 @@ def log_print(logf, msg=""):
     if logf is not None:
         logf.write(str(msg) + "\n")
         logf.flush()
-
-
-def sanitize(name):
-    return "".join(ch if ch.isalnum() or ch in "_-" else "_" for ch in str(name))
 
 
 def parse_args():

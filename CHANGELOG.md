@@ -1,3 +1,10 @@
+## v1.0.0 — User-validated Windows baseline (2026-10-18)
+
+- Adopt the exact user-tested `odb2vtu.exe` as the canonical Windows executable baseline.
+- Synchronize Windows embedded GUI, launch scripts, and Abaqus/CPFEM Python sources with the 31 EXE resources.
+- Keep embedded old version strings unchanged to preserve byte-for-byte fidelity to the validated executable.
+- Document binary SHA-256, source manifest, Linux non-validation, and differing PS2EXE packaging.
+
 ## [0.2.2] - 2026-10-16
 
 ### Linux packaging and desktop icon fix

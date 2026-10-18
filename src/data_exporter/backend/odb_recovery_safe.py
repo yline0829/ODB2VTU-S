@@ -9,7 +9,6 @@ from __future__ import print_function
 import argparse
 import copy
 import json
-import mmap
 import os
 import re
 import shutil

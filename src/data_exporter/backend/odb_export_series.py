@@ -17,7 +17,7 @@ from odb_export_state import (
     atomic_replace, atomic_write_json, export_kwargs_from_spec,
     load_manifest, make_output_spec, merge_output_specs, new_manifest,
     output_spec_equal, same_source_identity, source_identity, source_revision,
-    stable_vtu_name, state_key
+    state_key
 )
 
 
@@ -298,13 +298,15 @@ def main():
         step_names = list(odb.steps.keys())
         step_index = dict((name, i) for i, name in enumerate(step_names))
         offsets = step_offsets(odb, step_names)
+        # Resolve each Step object once; Abaqus returns the same wrapper per name.
+        steps_map = dict((name, odb.steps[name]) for name in step_names)
 
         unique = set()
         selected = []
         for sname, fi in raw:
-            if sname not in odb.steps:
+            if sname not in steps_map:
                 raise RuntimeError("Selected Step not found: %s" % sname)
-            st = odb.steps[sname]
+            st = steps_map[sname]
             if fi < 0 or fi >= len(st.frames):
                 raise RuntimeError("Selected frame out of range: %s / %d (frames=%d)" %
                                    (sname, fi, len(st.frames)))
@@ -359,7 +361,7 @@ def main():
         print("Scanning existing VTU directory before assigning filenames ...")
         found, names_on_disk, next_serial, inventory_issues = scan_vtu_directory(
             frame_dir, stem, step_names,
-            lambda name: len(odb.steps[name].frames), pvd, frames)
+            lambda name: len(steps_map[name].frames), pvd, frames)
         for issue in inventory_issues:
             print("VTU INVENTORY INFO:" if issue.startswith('PRESERVED UNREFERENCED') else "VTU INVENTORY WARNING:", issue)
         # A filename preference is not a data-preservation decision: same
@@ -667,7 +669,7 @@ def main():
                     time.time() - t_start))
                 sys.stdout.flush()
 
-            frame = odb.steps[sname].frames[fi]
+            frame = steps_map[sname].frames[fi]
             frames[key] = {
                 "step": sname,
                 "frame": int(fi),
@@ -685,7 +687,7 @@ def main():
                 continue
             sname = ent.get("step")
             fi = int(ent.get("frame", -1))
-            if sname not in odb.steps or fi < 0 or fi >= len(odb.steps[sname].frames):
+            if sname not in steps_map or fi < 0 or fi >= len(steps_map[sname].frames):
                 print("WARNING: inactive-invalid manifest state omitted from PVD:", key)
                 continue
             fpath = os.path.join(frame_dir, ent.get("file", ""))
@@ -698,7 +700,7 @@ def main():
         datasets = []
         last_time = None
         for sname, fi, ent in active:
-            frame = odb.steps[sname].frames[fi]
+            frame = steps_map[sname].frames[fi]
             global_t = offsets[sname] + float(frame.frameValue)
             if last_time is not None and global_t <= last_time:
                 eps = max(1.0e-12, abs(last_time) * 1.0e-12)

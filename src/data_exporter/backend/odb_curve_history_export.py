@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
-import os, sys, csv, math, argparse, traceback
+import os, sys, csv, argparse, traceback
 from odbAccess import openOdb
 
 COF_NAME = "COF=|RF1|/|CF2|"
@@ -50,12 +50,6 @@ def compute_source(src, t, values, global_t):
             return float("nan")
         return abs(values["RF1"]) / den
     return float(values[src])
-
-def finite(x):
-    try:
-        return math.isfinite(float(x))
-    except Exception:
-        return False
 
 def main():
     p = argparse.ArgumentParser()

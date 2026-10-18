@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
-import os, sys, json, argparse, traceback
+import sys, json, argparse, traceback
 from odbAccess import openOdb
 
 def main():

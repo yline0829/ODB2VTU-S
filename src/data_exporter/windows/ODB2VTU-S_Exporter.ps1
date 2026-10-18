@@ -1,16 +1,13 @@
 ﻿Add-Type -AssemblyName PresentationFramework
-Add-Type -AssemblyName PresentationCore
-Add-Type -AssemblyName WindowsBase
-Add-Type -AssemblyName System.Windows.Forms
 
-# Resolve the directory containing the GUI/backend files in both script and PS2EXE-compiled modes.
-# PS2EXE 1.0.18 provides $ScriptRoot because $PSScriptRoot/$MyInvocation are not reliable in a compiled EXE.
-$scriptDir = $PSScriptRoot
-if ([string]::IsNullOrWhiteSpace($scriptDir)) { $scriptDir = $ScriptRoot }
-if ([string]::IsNullOrWhiteSpace($scriptDir)) {
-    $scriptDir = Split-Path -Parent ([Environment]::GetCommandLineArgs()[0])
+# WinForms is only needed for the folder-picker dialogs; load it on first use.
+function Ensure-WinForms {
+    if(-not ('System.Windows.Forms.FolderBrowserDialog' -as [type])){
+        Add-Type -AssemblyName System.Windows.Forms
+    }
 }
-if ([string]::IsNullOrWhiteSpace($scriptDir)) { $scriptDir = (Get-Location).Path }
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $metaPy = Join-Path $scriptDir "odb_metadata.py"
 $fieldsPy = Join-Path $scriptDir "odb_list_fields.py"
 $exportPy = Join-Path $scriptDir "odb_export_vtu.py"
@@ -26,52 +23,791 @@ $selectionFile = Join-Path $scriptDir "_selected_step_frames.txt"
 $analysisPy = Join-Path $scriptDir "odb_field_analysis.py"
 $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
 
-[xml]$xaml = @"
+# Remove stale export-runner temp files left behind by earlier sessions.
+try {
+    Get-ChildItem -Path (Join-Path $env:TEMP 'ODB2VTUS_Export_*.cmd') -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+} catch { }
+
+# ============================================================================
+#  Modern UI theme (light / dark), shared by every window.
+#  Colors are exposed as DynamicResource brushes, so the theme can be switched
+#  at runtime without rebuilding any XAML.
+# ============================================================================
+$script:theme = 'light'
+
+$script:themeColors = @{
+    light = @{
+        'Bg.Window'         = '#EDF0F4'
+        'Bg.Panel'          = '#FFFFFF'
+        'Bg.Header'         = '#F4F6F9'
+        'Bg.Toolbar'        = '#FFFFFF'
+        'Bg.Menu'           = '#FFFFFF'
+        'Bg.Status'         = '#F4F6F9'
+        'Bg.Control'        = '#FFFFFF'
+        'Bg.ControlHover'   = '#F2F6FB'
+        'Bg.Selection'      = '#D7E6F8'
+        'Bg.SelectionHover' = '#EAF3FC'
+        'Bg.Inset'          = '#FAFBFD'
+        'Border.Default'    = '#DFE4EA'
+        'Border.Strong'     = '#C6CED8'
+        'Border.Control'    = '#C9D1DA'
+        'Fg.Text'           = '#1E2733'
+        'Fg.TextMuted'      = '#5A6673'
+        'Fg.TextDim'        = '#8B95A1'
+        'Fg.OnAccent'       = '#FFFFFF'
+        'Accent'            = '#2F6FD0'
+        'AccentHover'       = '#3B80E2'
+        'AccentPressed'     = '#255CB0'
+        'Splitter'          = '#DCE2E9'
+    }
+    dark = @{
+        'Bg.Window'         = '#1B1D21'
+        'Bg.Panel'          = '#23262B'
+        'Bg.Header'         = '#2A2E34'
+        'Bg.Toolbar'        = '#23262B'
+        'Bg.Menu'           = '#23262B'
+        'Bg.Status'         = '#1F2226'
+        'Bg.Control'        = '#2B2F35'
+        'Bg.ControlHover'   = '#343A42'
+        'Bg.Selection'      = '#2F4E77'
+        'Bg.SelectionHover' = '#35475E'
+        'Bg.Inset'          = '#1F2226'
+        'Border.Default'    = '#34383F'
+        'Border.Strong'     = '#454B54'
+        'Border.Control'    = '#3D434B'
+        'Fg.Text'           = '#E7EAEE'
+        'Fg.TextMuted'      = '#A6AFBA'
+        'Fg.TextDim'        = '#7D8792'
+        'Fg.OnAccent'       = '#FFFFFF'
+        'Accent'            = '#4A86E8'
+        'AccentHover'       = '#5D94EC'
+        'AccentPressed'     = '#3A70C8'
+        'Splitter'          = '#34383F'
+    }
+}
+
+function Get-ThemeBrushXaml([string]$theme){
+    $sb = New-Object System.Text.StringBuilder
+    foreach($k in $script:themeColors[$theme].Keys){
+        [void]$sb.AppendLine(('<SolidColorBrush x:Key="{0}" Color="{1}"/>' -f $k, $script:themeColors[$theme][$k]))
+    }
+    return $sb.ToString()
+}
+
+# Recolour a live window: styles reference these keys through DynamicResource,
+# so assigning new brushes updates every control immediately.
+function Apply-ThemeColors {
+    if($window -eq $null){ return }
+    $map = $script:themeColors[$script:theme]
+    foreach($k in $map.Keys){
+        $brush = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.ColorConverter]::ConvertFromString($map[$k]))
+        $brush.Freeze()
+        # A ResourceDictionary must be updated through Remove/Add. Assigning with
+        # `$dict[$key] = $value` makes PowerShell bind to the explicit IDictionary
+        # indexer, which hands Freezable values to WPF as bare Colors; every
+        # DynamicResource consumer then throws and the window dies (theme switch crash).
+        $window.Resources.Remove($k)
+        $window.Resources.Add($k, $brush)
+    }
+}
+
+$themeStyles = @'
+<Style x:Key="ScrollBarPageButton" TargetType="RepeatButton">
+    <Setter Property="Focusable" Value="False"/>
+    <Setter Property="IsTabStop" Value="False"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="RepeatButton">
+                <Border Background="Transparent"/>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<Style x:Key="ScrollBarThumb" TargetType="Thumb">
+    <Setter Property="OverridesDefaultStyle" Value="True"/>
+    <Setter Property="IsTabStop" Value="False"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="Thumb">
+                <Border x:Name="Bd" Background="{DynamicResource Fg.TextDim}" CornerRadius="4" Margin="2"/>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Fg.TextMuted}"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<ControlTemplate x:Key="VerticalScrollBar" TargetType="ScrollBar">
+    <Grid Background="Transparent" Width="12">
+        <Track x:Name="PART_Track" IsDirectionReversed="True">
+            <Track.DecreaseRepeatButton>
+                <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageUpCommand"/>
+            </Track.DecreaseRepeatButton>
+            <Track.Thumb>
+                <Thumb Style="{StaticResource ScrollBarThumb}"/>
+            </Track.Thumb>
+            <Track.IncreaseRepeatButton>
+                <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageDownCommand"/>
+            </Track.IncreaseRepeatButton>
+        </Track>
+    </Grid>
+</ControlTemplate>
+
+<ControlTemplate x:Key="HorizontalScrollBar" TargetType="ScrollBar">
+    <Grid Background="Transparent" Height="12">
+        <Track x:Name="PART_Track">
+            <Track.DecreaseRepeatButton>
+                <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageLeftCommand"/>
+            </Track.DecreaseRepeatButton>
+            <Track.Thumb>
+                <Thumb Style="{StaticResource ScrollBarThumb}"/>
+            </Track.Thumb>
+            <Track.IncreaseRepeatButton>
+                <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageRightCommand"/>
+            </Track.IncreaseRepeatButton>
+        </Track>
+    </Grid>
+</ControlTemplate>
+
+<Style TargetType="ScrollBar">
+    <Setter Property="Width" Value="12"/>
+    <Setter Property="MinWidth" Value="12"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="Template" Value="{StaticResource VerticalScrollBar}"/>
+    <Style.Triggers>
+        <Trigger Property="Orientation" Value="Horizontal">
+            <Setter Property="Width" Value="Auto"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="MinHeight" Value="12"/>
+            <Setter Property="Template" Value="{StaticResource HorizontalScrollBar}"/>
+        </Trigger>
+    </Style.Triggers>
+</Style>
+
+<ControlTemplate x:Key="StdButtonTemplate" TargetType="Button">
+    <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+    </Border>
+    <ControlTemplate.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.ControlHover}"/>
+            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}"/>
+        </Trigger>
+        <Trigger Property="IsPressed" Value="True">
+            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.Selection}"/>
+        </Trigger>
+        <Trigger Property="IsEnabled" Value="False">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Trigger>
+    </ControlTemplate.Triggers>
+</ControlTemplate>
+
+<Style x:Key="StdButton" TargetType="Button">
+    <Setter Property="Background" Value="{DynamicResource Bg.Control}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Control}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="Padding" Value="13,6"/>
+    <Setter Property="MinHeight" Value="30"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="SnapsToDevicePixels" Value="True"/>
+    <Setter Property="Template" Value="{StaticResource StdButtonTemplate}"/>
+</Style>
+
+<Style TargetType="Button" BasedOn="{StaticResource StdButton}"/>
+
+<ControlTemplate x:Key="PrimaryButtonTemplate" TargetType="Button">
+    <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="5" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+    </Border>
+    <ControlTemplate.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentHover}"/>
+            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentHover}"/>
+        </Trigger>
+        <Trigger Property="IsPressed" Value="True">
+            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentPressed}"/>
+            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentPressed}"/>
+        </Trigger>
+        <Trigger Property="IsEnabled" Value="False">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Trigger>
+    </ControlTemplate.Triggers>
+</ControlTemplate>
+
+<Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource StdButton}">
+    <Setter Property="Background" Value="{DynamicResource Accent}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.OnAccent}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Template" Value="{StaticResource PrimaryButtonTemplate}"/>
+</Style>
+
+<ControlTemplate x:Key="TextBoxTemplate" TargetType="TextBox">
+    <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5">
+        <ScrollViewer x:Name="PART_ContentHost" Focusable="False" Margin="{TemplateBinding Padding}"/>
+    </Border>
+    <ControlTemplate.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Border.Strong}"/>
+        </Trigger>
+        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}"/>
+        </Trigger>
+        <Trigger Property="IsEnabled" Value="False">
+            <Setter Property="Opacity" Value="0.55"/>
+        </Trigger>
+    </ControlTemplate.Triggers>
+</ControlTemplate>
+
+<Style TargetType="TextBox">
+    <Setter Property="Background" Value="{DynamicResource Bg.Control}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Control}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="Padding" Value="8,5"/>
+    <Setter Property="MinHeight" Value="30"/>
+    <Setter Property="VerticalContentAlignment" Value="Center"/>
+    <Setter Property="Template" Value="{StaticResource TextBoxTemplate}"/>
+</Style>
+
+<Style x:Key="ComboToggle" TargetType="ToggleButton">
+    <Setter Property="Focusable" Value="False"/>
+    <Setter Property="IsTabStop" Value="False"/>
+    <Setter Property="ClickMode" Value="Press"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="ToggleButton">
+                <Border Background="Transparent"/>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<Style TargetType="ComboBoxItem">
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="Padding" Value="10,6"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="ComboBoxItem">
+                <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}" Margin="2,1">
+                    <ContentPresenter/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsHighlighted" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.SelectionHover}"/>
+                    </Trigger>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.Selection}"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<ControlTemplate x:Key="ComboBoxTemplate" TargetType="ComboBox">
+    <Grid>
+        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="26"/>
+                </Grid.ColumnDefinitions>
+                <ContentPresenter x:Name="ContentSite" Grid.Column="0" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" HorizontalAlignment="Left"
+                                  Content="{TemplateBinding SelectionBoxItem}"
+                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                  ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"/>
+                <Path Grid.Column="1" Data="M 0 0 L 4 4 L 8 0" Stroke="{DynamicResource Fg.TextMuted}" StrokeThickness="1.6" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+            </Grid>
+        </Border>
+        <ToggleButton x:Name="ToggleButton" Style="{StaticResource ComboToggle}" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"/>
+        <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False" Placement="Bottom" PopupAnimation="Fade" IsOpen="{TemplateBinding IsDropDownOpen}">
+            <Border Background="{DynamicResource Bg.Panel}" BorderBrush="{DynamicResource Border.Strong}" BorderThickness="1" CornerRadius="6" Padding="3" Margin="0,3,0,0"
+                    MinWidth="{TemplateBinding ActualWidth}" MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                <Border.Effect><DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.20" Color="#000000"/></Border.Effect>
+                <ScrollViewer><StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer>
+            </Border>
+        </Popup>
+    </Grid>
+    <ControlTemplate.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Border.Strong}"/>
+        </Trigger>
+        <Trigger Property="IsDropDownOpen" Value="True">
+            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}"/>
+        </Trigger>
+        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}"/>
+        </Trigger>
+        <Trigger Property="IsEnabled" Value="False">
+            <Setter Property="Opacity" Value="0.55"/>
+        </Trigger>
+    </ControlTemplate.Triggers>
+</ControlTemplate>
+
+<Style TargetType="ComboBox">
+    <Setter Property="Background" Value="{DynamicResource Bg.Control}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Control}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="Padding" Value="9,0"/>
+    <Setter Property="MinHeight" Value="30"/>
+    <Setter Property="VerticalContentAlignment" Value="Center"/>
+    <Setter Property="Template" Value="{StaticResource ComboBoxTemplate}"/>
+</Style>
+
+<Style TargetType="CheckBox">
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="Margin" Value="0,4"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="CheckBox">
+                <StackPanel Orientation="Horizontal" Background="Transparent">
+                    <Border x:Name="Box" Width="16" Height="16" CornerRadius="4" Background="{DynamicResource Bg.Control}" BorderBrush="{DynamicResource Border.Control}" BorderThickness="1.5" VerticalAlignment="Center">
+                        <Path x:Name="Check" Data="M 0 4 L 3 7 L 8 0" Stroke="{DynamicResource Fg.OnAccent}" StrokeThickness="1.9" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                </StackPanel>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsChecked" Value="True">
+                        <Setter TargetName="Box" Property="Background" Value="{DynamicResource Accent}"/>
+                        <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Accent}"/>
+                        <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                    </Trigger>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Accent}"/>
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter Property="Opacity" Value="0.5"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<Style TargetType="ListBoxItem">
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="Padding" Value="8,4"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="ListBoxItem">
+                <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}" Margin="1">
+                    <ContentPresenter/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.SelectionHover}"/>
+                    </Trigger>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.Selection}"/>
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter Property="Opacity" Value="0.5"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<Style TargetType="ListBox">
+    <Setter Property="Background" Value="{DynamicResource Bg.Control}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Control}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="Padding" Value="3"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="ListBox">
+                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5">
+                    <ScrollViewer Padding="{TemplateBinding Padding}" Focusable="False">
+                        <ItemsPresenter/>
+                    </ScrollViewer>
+                </Border>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<Style x:Key="ExpanderToggle" TargetType="ToggleButton">
+    <Setter Property="Focusable" Value="False"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="ToggleButton">
+                <Border x:Name="Bd" Background="{DynamicResource Bg.Header}" CornerRadius="6,6,0,0" Padding="12,9">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Path x:Name="Chevron" Data="M 0 0 L 4 4 L 8 0" Stroke="{DynamicResource Fg.TextMuted}" StrokeThickness="1.8" VerticalAlignment="Center" Margin="0,1,9,0"/>
+                        <ContentPresenter Grid.Column="1" Content="{TemplateBinding Content}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsChecked" Value="True">
+                        <Setter TargetName="Chevron" Property="Data" Value="M 0 4 L 4 0 L 8 4"/>
+                    </Trigger>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource Accent}"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<Style TargetType="Expander">
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="Margin" Value="0,0,0,8"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="Expander">
+                <Border Background="{DynamicResource Bg.Panel}" BorderBrush="{DynamicResource Border.Default}" BorderThickness="1" CornerRadius="6">
+                    <DockPanel>
+                        <ToggleButton x:Name="HeaderSite" DockPanel.Dock="Top" Style="{StaticResource ExpanderToggle}" Content="{TemplateBinding Header}" IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"/>
+                        <ContentPresenter x:Name="ExpandSite" Visibility="Collapsed"/>
+                    </DockPanel>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsExpanded" Value="True">
+                        <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<ControlTemplate x:Key="GroupBoxTemplate" TargetType="GroupBox">
+    <Border Background="{DynamicResource Bg.Panel}" BorderBrush="{DynamicResource Border.Default}" BorderThickness="1" CornerRadius="6">
+        <DockPanel>
+            <Border DockPanel.Dock="Top" Background="{DynamicResource Bg.Header}" CornerRadius="6,6,0,0" Padding="12,9">
+                <TextBlock Text="{TemplateBinding Header}" FontWeight="SemiBold" Foreground="{DynamicResource Fg.Text}"/>
+            </Border>
+            <ContentPresenter Margin="{TemplateBinding Padding}"/>
+        </DockPanel>
+    </Border>
+</ControlTemplate>
+
+<Style TargetType="GroupBox">
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="Padding" Value="12"/>
+    <Setter Property="Margin" Value="0,0,0,10"/>
+    <Setter Property="Template" Value="{StaticResource GroupBoxTemplate}"/>
+</Style>
+
+<Style TargetType="ToolTip">
+    <Setter Property="Background" Value="#2B3038"/>
+    <Setter Property="Foreground" Value="#EEF1F5"/>
+    <Setter Property="BorderBrush" Value="#3C434C"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="ToolTip">
+                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,6">
+                    <ContentPresenter/>
+                </Border>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<ControlTemplate x:Key="HLineTemplate" TargetType="Separator">
+    <Border Height="1" Background="{DynamicResource Border.Default}"/>
+</ControlTemplate>
+
+<Style TargetType="Separator">
+    <Setter Property="Template" Value="{StaticResource HLineTemplate}"/>
+    <Setter Property="Margin" Value="0,8"/>
+</Style>
+
+<Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="Separator">
+                <Border Height="1" Background="{DynamicResource Border.Default}" Margin="8,4"/>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<Style TargetType="GridSplitter">
+    <Setter Property="Background" Value="{DynamicResource Splitter}"/>
+    <Setter Property="ShowsPreview" Value="True"/>
+</Style>
+
+<ControlTemplate x:Key="TopLevelHeaderTemplate" TargetType="MenuItem">
+    <Grid>
+        <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="11,6">
+            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+        </Border>
+        <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False" Placement="Bottom" PopupAnimation="Fade"
+               IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
+            <Border Background="{DynamicResource Bg.Panel}" BorderBrush="{DynamicResource Border.Strong}" BorderThickness="1" CornerRadius="7" Padding="4" Margin="0,3,0,0" MinWidth="210">
+                <Border.Effect><DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.22" Color="#000000"/></Border.Effect>
+                <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+            </Border>
+        </Popup>
+    </Grid>
+    <ControlTemplate.Triggers>
+        <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.SelectionHover}"/></Trigger>
+        <Trigger Property="IsSubmenuOpen" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.Selection}"/></Trigger>
+        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+    </ControlTemplate.Triggers>
+</ControlTemplate>
+
+<ControlTemplate x:Key="TopLevelItemTemplate" TargetType="MenuItem">
+    <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="11,6">
+        <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+    </Border>
+    <ControlTemplate.Triggers>
+        <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.SelectionHover}"/></Trigger>
+    </ControlTemplate.Triggers>
+</ControlTemplate>
+
+<ControlTemplate x:Key="SubmenuItemTemplate" TargetType="MenuItem">
+    <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="10,7" Margin="2,1">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="22"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Path x:Name="Check" Grid.Column="0" Data="M 0 4 L 3 7 L 8 0" Stroke="{DynamicResource Accent}" StrokeThickness="1.9" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Hidden" VerticalAlignment="Center"/>
+            <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" Foreground="{DynamicResource Fg.TextDim}" Margin="18,0,0,0" VerticalAlignment="Center"/>
+        </Grid>
+    </Border>
+    <ControlTemplate.Triggers>
+        <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.SelectionHover}"/></Trigger>
+        <Trigger Property="IsChecked" Value="True"><Setter TargetName="Check" Property="Visibility" Value="Visible"/></Trigger>
+        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+    </ControlTemplate.Triggers>
+</ControlTemplate>
+
+<ControlTemplate x:Key="SubmenuHeaderTemplate" TargetType="MenuItem">
+    <Grid>
+        <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="10,7" Margin="2,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="22"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                <Path Grid.Column="2" Data="M 0 0 L 4 4 L 0 8" Stroke="{DynamicResource Fg.TextDim}" StrokeThickness="1.6" Margin="18,0,2,0" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+        <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False" Placement="Right" PopupAnimation="Fade"
+               IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
+            <Border Background="{DynamicResource Bg.Panel}" BorderBrush="{DynamicResource Border.Strong}" BorderThickness="1" CornerRadius="7" Padding="4" Margin="3,0,0,0" MinWidth="190">
+                <Border.Effect><DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.22" Color="#000000"/></Border.Effect>
+                <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+            </Border>
+        </Popup>
+    </Grid>
+    <ControlTemplate.Triggers>
+        <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.SelectionHover}"/></Trigger>
+    </ControlTemplate.Triggers>
+</ControlTemplate>
+
+<Style TargetType="MenuItem">
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="Template" Value="{StaticResource SubmenuItemTemplate}"/>
+    <Style.Triggers>
+        <Trigger Property="Role" Value="TopLevelHeader"><Setter Property="Template" Value="{StaticResource TopLevelHeaderTemplate}"/></Trigger>
+        <Trigger Property="Role" Value="TopLevelItem"><Setter Property="Template" Value="{StaticResource TopLevelItemTemplate}"/></Trigger>
+        <Trigger Property="Role" Value="SubmenuHeader"><Setter Property="Template" Value="{StaticResource SubmenuHeaderTemplate}"/></Trigger>
+    </Style.Triggers>
+</Style>
+
+<Style TargetType="Menu">
+    <Setter Property="Background" Value="{DynamicResource Bg.Menu}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
+    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="Menu">
+                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+                    <ItemsPresenter/>
+                </Border>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<Style TargetType="StatusBar">
+    <Setter Property="Background" Value="{DynamicResource Bg.Status}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.TextMuted}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
+    <Setter Property="BorderThickness" Value="0,1,0,0"/>
+</Style>
+
+<Style x:Key="Card" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource Bg.Panel}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="8"/>
+    <Setter Property="SnapsToDevicePixels" Value="True"/>
+</Style>
+
+<Style x:Key="CardHeader" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource Bg.Header}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
+    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    <Setter Property="CornerRadius" Value="7,7,0,0"/>
+    <Setter Property="Padding" Value="12,9"/>
+</Style>
+
+<Style x:Key="SectionTitle" TargetType="TextBlock">
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+</Style>
+
+<Style x:Key="FieldLabel" TargetType="TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Fg.TextMuted}"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+</Style>
+
+<Style x:Key="HintText" TargetType="TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Fg.TextMuted}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+    <Setter Property="Margin" Value="0,6,0,0"/>
+</Style>
+
+<Style x:Key="ToolbarSep" TargetType="Border">
+    <Setter Property="Width" Value="1"/>
+    <Setter Property="Background" Value="{DynamicResource Border.Default}"/>
+    <Setter Property="Margin" Value="11,5"/>
+</Style>
+
+<!-- ===== vector icons: inline geometry, no external assets, theme-aware stroke ===== -->
+<PathGeometry x:Key="IcoOpen"   Figures="M3.5,1.5 H9.5 L13,5 V14.5 H3.5 Z M9.5,1.5 V5 H13"/>
+<PathGeometry x:Key="IcoMeta"   Figures="M3.5,1.5 H12.5 V14.5 H3.5 Z M6.5,5.5 H10 M6.5,8.5 H10 M6.5,11.5 H10"/>
+<PathGeometry x:Key="IcoFields" Figures="M1.5,3.5 H14.5 V12.5 H1.5 Z M1.5,6.5 H14.5 M1.5,9.5 H14.5 M6,3.5 V12.5 M10.5,3.5 V12.5"/>
+<PathGeometry x:Key="IcoExport" Figures="M2,9 V13.5 H14 V9 M8,11.5 V3 M5,6 L8,3 L11,6"/>
+<PathGeometry x:Key="IcoFolder" Figures="M1.5,4 H6.2 L7.6,6 H14.5 V13 H1.5 Z"/>
+<PathGeometry x:Key="IcoCheck"  Figures="M3,8.5 L6.5,12 L13,3.5"/>
+<PathGeometry x:Key="IcoReset"  Figures="M6.2,4.6 H10 A3.2,3.2 0 0 1 10,11 H4.6 M6.2,4.6 L3.8,2.2 M6.2,4.6 L3.8,7"/>
+<PathGeometry x:Key="IcoRun"    Figures="M5.5,3.2 L13,8 L5.5,12.8 Z"/>
+<PathGeometry x:Key="IcoChart"  Figures="M2.2,13.2 H13.8 M4.6,13.2 V8.4 M8,13.2 V4.8 M11.4,13.2 V10.4"/>
+
+<Style x:Key="ToolIcon" TargetType="Path">
+    <Setter Property="Width" Value="16"/>
+    <Setter Property="Height" Value="16"/>
+    <Setter Property="Stretch" Value="None"/>
+    <Setter Property="StrokeThickness" Value="1.4"/>
+    <Setter Property="StrokeStartLineCap" Value="Round"/>
+    <Setter Property="StrokeEndLineCap" Value="Round"/>
+    <Setter Property="StrokeLineJoin" Value="Round"/>
+    <Setter Property="Stroke" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="Fill" Value="Transparent"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="Margin" Value="0,0,8,0"/>
+</Style>
+<Style x:Key="ToolIconOnAccent" TargetType="Path" BasedOn="{StaticResource ToolIcon}">
+    <Setter Property="Stroke" Value="{DynamicResource Fg.OnAccent}"/>
+</Style>
+<Style x:Key="ToolIconMuted" TargetType="Path" BasedOn="{StaticResource ToolIcon}">
+    <Setter Property="Stroke" Value="{DynamicResource Fg.TextMuted}"/>
+</Style>
+
+<!-- ===== guided step rail ===== -->
+<Style x:Key="WizardRail" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource Bg.Inset}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
+    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    <Setter Property="Padding" Value="14,9"/>
+</Style>
+<Style x:Key="StepDot" TargetType="Border">
+    <Setter Property="Width" Value="20"/>
+    <Setter Property="Height" Value="20"/>
+    <Setter Property="CornerRadius" Value="10"/>
+    <Setter Property="Background" Value="{DynamicResource Bg.Control}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+</Style>
+<Style x:Key="StepDotCurrent" TargetType="Border" BasedOn="{StaticResource StepDot}">
+    <Setter Property="Background" Value="{DynamicResource Bg.Panel}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
+    <Setter Property="BorderThickness" Value="2"/>
+</Style>
+<Style x:Key="StepDotDone" TargetType="Border" BasedOn="{StaticResource StepDot}">
+    <Setter Property="Background" Value="{DynamicResource Accent}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
+</Style>
+<Style x:Key="StepNumber" TargetType="TextBlock">
+    <Setter Property="HorizontalAlignment" Value="Center"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="FontSize" Value="11"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.TextMuted}"/>
+</Style>
+<Style x:Key="StepNumberCurrent" TargetType="TextBlock" BasedOn="{StaticResource StepNumber}">
+    <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+</Style>
+<Style x:Key="StepNumberDone" TargetType="TextBlock" BasedOn="{StaticResource StepNumber}">
+    <Setter Property="Foreground" Value="{DynamicResource Fg.OnAccent}"/>
+</Style>
+<Style x:Key="StepLabel" TargetType="TextBlock">
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="Margin" Value="7,0,0,0"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.TextMuted}"/>
+</Style>
+<Style x:Key="StepLabelCurrent" TargetType="TextBlock" BasedOn="{StaticResource StepLabel}">
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+</Style>
+<Style x:Key="StepLabelDone" TargetType="TextBlock" BasedOn="{StaticResource StepLabel}">
+    <Setter Property="Foreground" Value="{DynamicResource Fg.TextDim}"/>
+</Style>
+<Style x:Key="StepArrow" TargetType="TextBlock">
+    <Setter Property="Text" Value="›"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="Margin" Value="11,0,11,0"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.TextDim}"/>
+</Style>
+'@
+
+$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ODB2VTU-S Workbench"
-        Width="1360" Height="850"
+        Width="1380" Height="880"
         MinWidth="1080" MinHeight="700"
         WindowStartupLocation="CenterScreen"
-        Background="#E2E2E2"
-        FontFamily="Segoe UI"
-        FontSize="12">
+        Background="{DynamicResource Bg.Window}"
+        Foreground="{DynamicResource Fg.Text}"
+        FontFamily="Segoe UI, Microsoft YaHei UI, Microsoft YaHei"
+        FontSize="13"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Ideal">
 
     <Window.Resources>
-        <Style TargetType="TextBox">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#A6A6A6"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="4,2"/>
-            <Setter Property="Height" Value="25"/>
-        </Style>
-        <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#A6A6A6"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Height" Value="25"/>
-        </Style>
-        <Style TargetType="Button">
-            <Setter Property="Background" Value="#E7E7E7"/>
-            <Setter Property="BorderBrush" Value="#999999"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="8,3"/>
-            <Setter Property="MinHeight" Value="25"/>
-        </Style>
-        <Style TargetType="CheckBox">
-            <Setter Property="Margin" Value="0,2"/>
-        </Style>
-        <Style TargetType="Expander">
-            <Setter Property="Margin" Value="0,0,0,2"/>
-            <Setter Property="Background" Value="#F2F2F2"/>
-            <Setter Property="BorderBrush" Value="#B5B5B5"/>
-            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-        </Style>
+$(Get-ThemeBrushXaml $script:theme)
+$themeStyles
     </Window.Resources>
 
     <DockPanel>
 
-        <Menu DockPanel.Dock="Top" Height="24" Background="#F4F4F4">
+        <Menu DockPanel.Dock="Top" Padding="7,5">
             <MenuItem x:Name="menuFile" Header="_File">
                 <MenuItem x:Name="miOpen" Header="Open ODB..."/>
                 <Separator/>
@@ -91,10 +827,10 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
         </Menu>
 
         <Border DockPanel.Dock="Top"
-                Background="#EBEBEB"
-                BorderBrush="#B7B7B7"
+                Background="{DynamicResource Bg.Toolbar}"
+                BorderBrush="{DynamicResource Border.Default}"
                 BorderThickness="0,0,0,1"
-                Padding="4,2">
+                Padding="12,10">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -102,16 +838,28 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Orientation="Horizontal">
-                    <Button x:Name="tbOpen" Content="Open ODB"/>
-                    <Button x:Name="tbRead" Content="Read Metadata" Margin="4,0,0,0"/>
-                    <Button x:Name="tbFields" Content="Read Fields" Margin="12,0,0,0"/>
-                    <Button x:Name="tbExport" Content="Export Data" Margin="4,0,0,0"/>
-                    <Button x:Name="tbOpenFolder" Content="Open Output Folder" Margin="4,0,0,0"/>
+                    <Button x:Name="tbOpen" Style="{StaticResource PrimaryButton}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource ToolIconOnAccent}" Data="{StaticResource IcoOpen}"/>
+                            <TextBlock x:Name="tbOpenText" Text="Open ODB" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="tbOpenFolder" Margin="8,0,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoFolder}"/>
+                            <TextBlock x:Name="tbOpenFolderText" Text="Open Output Folder" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <TextBlock x:Name="lblLanguage" Text="Language" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <ComboBox x:Name="cmbLanguage" Width="105" Height="24">
+                    <TextBlock x:Name="lblTheme" Text="Theme" VerticalAlignment="Center" Margin="0,0,7,0" Foreground="{DynamicResource Fg.TextMuted}"/>
+                    <ComboBox x:Name="cmbTheme" Width="98" Height="30">
+                        <ComboBoxItem Content="Light" Tag="light"/>
+                        <ComboBoxItem Content="Dark" Tag="dark"/>
+                    </ComboBox>
+                    <TextBlock x:Name="lblLanguage" Text="Language" VerticalAlignment="Center" Margin="16,0,7,0" Foreground="{DynamicResource Fg.TextMuted}"/>
+                    <ComboBox x:Name="cmbLanguage" Width="106" Height="30">
                         <ComboBoxItem Content="English" Tag="en"/>
                         <ComboBoxItem Content="中文" Tag="zh"/>
                     </ComboBox>
@@ -119,246 +867,346 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
             </Grid>
         </Border>
 
-        <StatusBar DockPanel.Dock="Bottom"
-                   Height="25"
-                   Background="#E8E8E8"
-                   BorderBrush="#B5B5B5"
-                   BorderThickness="0,1,0,0">
-            <StatusBarItem><TextBlock x:Name="txtStatus" Text="Ready"/></StatusBarItem>
+        <!-- ===================== guided step rail ===================== -->
+        <Border DockPanel.Dock="Top" Style="{StaticResource WizardRail}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border x:Name="stepDot1" Style="{StaticResource StepDot}"><TextBlock x:Name="stepNum1" Style="{StaticResource StepNumber}" Text="1"/></Border>
+                    <TextBlock x:Name="stepLbl1" Style="{StaticResource StepLabel}" Text="Source"/>
+                    <TextBlock Style="{StaticResource StepArrow}"/>
+                    <Border x:Name="stepDot2" Style="{StaticResource StepDot}"><TextBlock x:Name="stepNum2" Style="{StaticResource StepNumber}" Text="2"/></Border>
+                    <TextBlock x:Name="stepLbl2" Style="{StaticResource StepLabel}" Text="State"/>
+                    <TextBlock Style="{StaticResource StepArrow}"/>
+                    <Border x:Name="stepDot3" Style="{StaticResource StepDot}"><TextBlock x:Name="stepNum3" Style="{StaticResource StepNumber}" Text="3"/></Border>
+                    <TextBlock x:Name="stepLbl3" Style="{StaticResource StepLabel}" Text="Fields"/>
+                    <TextBlock Style="{StaticResource StepArrow}"/>
+                    <Border x:Name="stepDot4" Style="{StaticResource StepDot}"><TextBlock x:Name="stepNum4" Style="{StaticResource StepNumber}" Text="4"/></Border>
+                    <TextBlock x:Name="stepLbl4" Style="{StaticResource StepLabel}" Text="Output"/>
+                    <TextBlock Style="{StaticResource StepArrow}"/>
+                    <Border x:Name="stepDot5" Style="{StaticResource StepDot}"><TextBlock x:Name="stepNum5" Style="{StaticResource StepNumber}" Text="5"/></Border>
+                    <TextBlock x:Name="stepLbl5" Style="{StaticResource StepLabel}" Text="Export"/>
+                </StackPanel>
+
+                <Button x:Name="btnNextStep" Grid.Column="2" VerticalAlignment="Center" MinWidth="150" Style="{StaticResource PrimaryButton}">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIconOnAccent}" Data="{StaticResource IcoRun}"/>
+                        <TextBlock x:Name="btnNextStepText" Text="Next" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+
+        <StatusBar DockPanel.Dock="Bottom" Height="28">
+            <StatusBarItem><TextBlock x:Name="txtStatus" Text="Ready" Foreground="{DynamicResource Fg.TextMuted}"/></StatusBarItem>
             <Separator/>
-            <StatusBarItem><TextBlock x:Name="txtStatusRight" Text="ODB: not loaded"/></StatusBarItem>
+            <StatusBarItem><TextBlock x:Name="txtStatusRight" Text="ODB: not loaded" Foreground="{DynamicResource Fg.TextMuted}"/></StatusBarItem>
         </StatusBar>
 
-        <Grid>
+        <Grid Margin="10">
+            <!-- Top row = options (wide, left) + selection summary (right).
+                 Bottom row = Output and Output Messages side by side. -->
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" MinHeight="200"/>
+                <RowDefinition Height="8"/>
+                <RowDefinition Height="Auto" MinHeight="150"/>
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="colLeftPanel" Width="470" MinWidth="360"/>
-                <ColumnDefinition Width="7"/>
-                <ColumnDefinition Width="*" MinWidth="420"/>
+                <ColumnDefinition x:Name="colLeftPanel" Width="*" MinWidth="430"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="390" MinWidth="270"/>
             </Grid.ColumnDefinitions>
 
-            <!-- LEFT PROPERTIES -->
-            <Border Grid.Column="0"
-                    Background="#F2F2F2"
-                    BorderBrush="#A7A7A7"
-                    BorderThickness="0,0,1,0">
+            <!-- ============================ LEFT: properties ============================ -->
+            <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource Card}">
                 <DockPanel>
 
-                    <Border DockPanel.Dock="Top"
-                            Background="#DCDCDC"
-                            BorderBrush="#A7A7A7"
-                            BorderThickness="0,0,0,1"
-                            Padding="7,4">
-                        <TextBlock x:Name="hdrProperties" Text="Properties" FontWeight="SemiBold"/>
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
+                        <TextBlock x:Name="hdrProperties" Text="Properties" Style="{StaticResource SectionTitle}"/>
                     </Border>
 
                     <Border DockPanel.Dock="Top"
-                            Background="#F5F5F5"
-                            BorderBrush="#C0C0C0"
+                            Background="{DynamicResource Bg.Panel}"
+                            BorderBrush="{DynamicResource Border.Default}"
                             BorderThickness="0,0,0,1"
-                            Padding="5,4">
+                            Padding="12,9">
                         <StackPanel Orientation="Horizontal">
-                            <Button x:Name="btnApply" Content="Apply" Width="82" Background="#E2EEF8"/>
-                            <Button x:Name="btnReset" Content="Reset" Width="76" Margin="5,0,0,0"/>
+                            <Button x:Name="btnReset" Width="88">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoReset}"/>
+                                    <TextBlock x:Name="btnResetText" Text="Reset" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
                     </Border>
 
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="5">
+                    <!-- Option tree (left) + the selected section's options (right).
+                         Only one section is shown at a time, so the properties panel
+                         no longer scrolls through every group. -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="184" MinWidth="134"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
 
-                            <Expander x:Name="grpSource" Header="Source" IsExpanded="True">
-                                <StackPanel Margin="8,5">
-                                    <TextBlock x:Name="lblOdbFile" Text="ODB File"/>
-                                    <Grid Margin="0,3,0,4">
+                        <Border Grid.Column="0"
+                                Background="{DynamicResource Bg.Panel}"
+                                BorderBrush="{DynamicResource Border.Default}"
+                                BorderThickness="0,0,1,0">
+                            <ListBox x:Name="navList"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Margin="0,4,0,4"
+                                     HorizontalContentAlignment="Left"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBoxItem x:Name="navGroupData" Content="Data / target" IsEnabled="False" FontSize="11" Padding="10,4,6,0"/>
+                                <ListBoxItem x:Name="navSource" Content="Source" Tag="Source" Padding="22,4,8,4"/>
+                                <ListBoxItem x:Name="navTarget" Content="Target" Tag="Target" Padding="22,4,8,4"/>
+                                <ListBoxItem x:Name="navGroupSeries" Content="Time series" IsEnabled="False" FontSize="11" Padding="10,6,6,0"/>
+                                <ListBoxItem x:Name="navSeries" Content="Time Series" Tag="Series" Padding="22,4,8,4"/>
+                                <ListBoxItem x:Name="navGroupFields" Content="Field variables" IsEnabled="False" FontSize="11" Padding="10,6,6,0"/>
+                                <ListBoxItem x:Name="navFields" Content="Fields" Tag="Fields" Padding="22,4,8,4"/>
+                                <ListBoxItem x:Name="navDerived" Content="Derived Fields" Tag="Derived" Padding="22,4,8,4"/>
+                                <ListBoxItem x:Name="navGND" Content="GND Evolution" Tag="GND" Padding="22,4,8,4"/>
+                                <ListBoxItem x:Name="navDifference" Content="Difference" Tag="Difference" Padding="22,4,8,4"/>
+                            </ListBox>
+                        </Border>
+
+                        <!-- Page host: every section lives in this cell, the tree shows one at a time. -->
+                        <Grid Grid.Column="1" Margin="12,10,12,10">
+
+                            <StackPanel x:Name="grpSource" VerticalAlignment="Top">
+                                <TextBlock x:Name="hdrSource" Text="Source" Style="{StaticResource SectionTitle}"/>
+                                <StackPanel Margin="0,8,0,0">
+                                    <TextBlock x:Name="lblOdbFile" Text="ODB File" Style="{StaticResource FieldLabel}"/>
+                                    <Grid Margin="0,5,0,8">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="36"/>
+                                            <ColumnDefinition Width="40"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBox x:Name="txtOdb"/>
-                                        <Button x:Name="btnBrowse" Grid.Column="1" Content="..." Margin="4,0,0,0"/>
+                                        <Button x:Name="btnBrowse" Grid.Column="1" Content="…" Margin="6,0,0,0"/>
                                     </Grid>
-                                    <Button x:Name="btnRead" Content="Read Metadata" Width="118" HorizontalAlignment="Left"/>
+                                    <Button x:Name="btnRead" Content="Read Metadata" HorizontalAlignment="Left" Padding="16,6"/>
                                 </StackPanel>
-                            </Expander>
+                            </StackPanel>
 
-                            <Expander x:Name="grpTarget" Header="Target" IsExpanded="True">
-                                <Grid Margin="8,5">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
-                                    </Grid.RowDefinitions>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="100"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
+                            <StackPanel x:Name="grpTarget" VerticalAlignment="Top" Visibility="Collapsed">
+                                <TextBlock x:Name="hdrTarget" Text="Target" Style="{StaticResource SectionTitle}"/>
+                                <StackPanel Margin="0,8,0,0">
 
-                                    <TextBlock x:Name="lblInstance" Grid.Row="0" Text="Instance" VerticalAlignment="Center"/>
-                                    <ComboBox x:Name="cmbInstance" Grid.Row="0" Grid.Column="1" Margin="0,2"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" MinWidth="230"/>
+                                            <ColumnDefinition Width="22"/>
+                                            <ColumnDefinition Width="*" MinWidth="230"/>
+                                        </Grid.ColumnDefinitions>
 
-                                    <TextBlock x:Name="lblElementSet" Grid.Row="1" Text="Element Set" VerticalAlignment="Center"/>
-                                    <ComboBox x:Name="cmbElementSet" Grid.Row="1" Grid.Column="1" Margin="0,2"/>
-
-                                    <TextBlock x:Name="lblStep" Grid.Row="2" Text="Step" VerticalAlignment="Center"/>
-                                    <ComboBox x:Name="cmbStep" Grid.Row="2" Grid.Column="1" Margin="0,2"/>
-
-                                    <TextBlock x:Name="lblFrame" Grid.Row="3" Text="Frame" VerticalAlignment="Center"/>
-                                    <ComboBox x:Name="cmbFrame" Grid.Row="3" Grid.Column="1" Margin="0,2"/>
-                                </Grid>
-                            </Expander>
-
-                            <Expander x:Name="grpSeries" Header="Time Series" IsExpanded="True">
-                                <StackPanel Margin="8,5">
-
-                                    <CheckBox x:Name="chkSeries"
-                                              Content="Export as ParaView time series (.pvd)"
-                                              Margin="0,0,0,6"/>
-
-                                    <Border x:Name="panelSeries"
-                                            BorderBrush="#BDBDBD"
-                                            BorderThickness="1"
-                                            Background="#FAFAFA"
-                                            Padding="7">
-
-                                        <StackPanel>
-                                            <TextBlock x:Name="txtSeriesHint"
-                                                       Text="Select one Step, then Ctrl/Shift-select any frames to add."
-                                                       Foreground="#555"
-                                                       TextWrapping="Wrap"
-                                                       Margin="0,0,0,6"/>
-
-                                            <Grid>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="150"/>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="150"/>
-                                                    <RowDefinition Height="Auto"/>
-                                                </Grid.RowDefinitions>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="92"/>
-                                                    <ColumnDefinition Width="*" MinWidth="220"/>
-                                                </Grid.ColumnDefinitions>
-
-                                                <TextBlock x:Name="lblSeriesStep"
-                                                           Grid.Row="0"
-                                                           Text="Steps"
-                                                           VerticalAlignment="Top"
-                                                           Margin="0,4,0,0"/>
-
-                                                <ListBox x:Name="lstSeriesSteps"
-                                                         Grid.Row="0"
-                                                         Grid.Column="1"
-                                                         Height="105"
-                                                         Margin="0,2,0,5"
-                                                         SelectionMode="Extended"
-                                                         BorderBrush="#A8A8A8"
-                                                         BorderThickness="1"
-                                                         Background="White"
-                                                         ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
-
-                                                <TextBlock x:Name="lblAvailableFrames"
-                                                           Grid.Row="1"
-                                                           Text="Common Frames"
-                                                           VerticalAlignment="Top"
-                                                           Margin="0,4,0,0"/>
-
-                                                <ListBox x:Name="lstAvailableFrames"
-                                                         Grid.Row="1"
-                                                         Grid.Column="1"
-                                                         SelectionMode="Extended"
-                                                         BorderBrush="#A8A8A8"
-                                                         BorderThickness="1"
-                                                         Background="White"
-                                                         ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
-
-                                                <StackPanel Grid.Row="2"
-                                                            Grid.Column="1"
-                                                            Orientation="Horizontal"
-                                                            Margin="0,5,0,7">
-                                                    <Button x:Name="btnAddFrames"
-                                                            Content="Add selected frames to selected Steps"
-                                                            Width="225"/>
-                                                    <Button x:Name="btnAddAllFrames"
-                                                            Content="Add all common frames"
-                                                            Width="150"
-                                                            Margin="5,0,0,0"/>
-                                                </StackPanel>
-
-                                                <TextBlock x:Name="lblSelectedStates"
-                                                           Grid.Row="3"
-                                                           Text="Selected Step / Frame states"
-                                                           VerticalAlignment="Top"
-                                                           Margin="0,4,0,0"/>
-
-                                                <ListBox x:Name="lstSelectedStates"
-                                                         Grid.Row="3"
-                                                         Grid.Column="1"
-                                                         SelectionMode="Extended"
-                                                         BorderBrush="#A8A8A8"
-                                                         BorderThickness="1"
-                                                         Background="White"
-                                                         ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
-
-                                                <StackPanel Grid.Row="4"
-                                                            Grid.Column="1"
-                                                            Orientation="Horizontal"
-                                                            Margin="0,5,0,0">
-                                                    <Button x:Name="btnRemoveStates"
-                                                            Content="Remove selected"
-                                                            Width="120"/>
-                                                    <Button x:Name="btnClearStates"
-                                                            Content="Clear all"
-                                                            Width="82"
-                                                            Margin="5,0,0,0"/>
-                                                </StackPanel>
-                                            </Grid>
+                                        <!-- Real selections: they define the exported region. -->
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock x:Name="lblTargetSel" Text="Selection" Style="{StaticResource SectionTitle}"/>
+                                            <TextBlock x:Name="lblInstance" Text="Instance" Style="{StaticResource FieldLabel}" Margin="0,7,0,0"/>
+                                            <ComboBox x:Name="cmbInstance" Margin="0,3"/>
+                                            <TextBlock x:Name="lblElementSet" Text="Element Set" Style="{StaticResource FieldLabel}" Margin="0,7,0,0"/>
+                                            <ComboBox x:Name="cmbElementSet" Margin="0,3"/>
                                         </StackPanel>
-                                    </Border>
-                                </StackPanel>
-                            </Expander>
 
-                            <Expander x:Name="grpFields" Header="Fields" IsExpanded="True">
-                                <StackPanel Margin="8,5">
+                                        <!-- Browse only: used to look at frames / read field variables. -->
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock x:Name="lblTargetBrowse" Text="Browse / verify" Style="{StaticResource SectionTitle}"/>
+                                            <TextBlock x:Name="lblStep" Text="Step" Style="{StaticResource FieldLabel}" Margin="0,7,0,0"/>
+                                            <ComboBox x:Name="cmbStep" Margin="0,3"/>
+                                            <TextBlock x:Name="lblFrame" Text="Frame" Style="{StaticResource FieldLabel}" Margin="0,7,0,0"/>
+                                            <ComboBox x:Name="cmbFrame" Margin="0,3"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <TextBlock x:Name="txtTargetHint"
+                                               Text="Step / Frame only browse and cross-check the ODB (used when reading field variables)."
+                                               Style="{StaticResource HintText}"/>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Grid x:Name="grpSeries" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBlock x:Name="hdrSeries" Grid.Row="0" Text="Time Series" Style="{StaticResource SectionTitle}"/>
+
+                                <StackPanel Grid.Row="1" Margin="0,8,0,0">
+                                    <CheckBox x:Name="chkSeries"
+                                              Content="Export as ParaView time series (.pvd)"/>
+                                    <TextBlock x:Name="txtSeriesHint"
+                                               Text="Tick Steps (Shift / Ctrl selects ranges), then tick the frames to add."
+                                               Foreground="{DynamicResource Fg.TextMuted}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,6,0,0"/>
+                                </StackPanel>
+
+                                <Border x:Name="panelSeries"
+                                        Grid.Row="2"
+                                        Margin="0,8,0,0"
+                                        BorderBrush="{DynamicResource Border.Default}"
+                                        BorderThickness="1"
+                                        Background="{DynamicResource Bg.Inset}"
+                                        CornerRadius="6"
+                                        Padding="8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" MinWidth="140"/>
+                                            <ColumnDefinition Width="12"/>
+                                            <ColumnDefinition Width="*" MinWidth="140"/>
+                                            <ColumnDefinition Width="12"/>
+                                            <ColumnDefinition Width="*" MinWidth="140"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*" MinHeight="70"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <TextBlock x:Name="lblSeriesStep"
+                                                   Grid.Row="0"
+                                                   Grid.Column="0"
+                                                   Text="Steps"
+                                                   Style="{StaticResource FieldLabel}"
+                                                   TextWrapping="Wrap"/>
+
+                                        <Border Grid.Row="1"
+                                                Grid.Column="0"
+                                                Background="{DynamicResource Bg.Inset}"
+                                                BorderBrush="{DynamicResource Border.Control}"
+                                                BorderThickness="1"
+                                                CornerRadius="6">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                <StackPanel x:Name="panelSeriesSteps" Margin="8"/>
+                                            </ScrollViewer>
+                                        </Border>
+
+                                        <TextBlock x:Name="lblAvailableFrames"
+                                                   Grid.Row="0"
+                                                   Grid.Column="2"
+                                                   Text="Common Frames"
+                                                   Style="{StaticResource FieldLabel}"
+                                                   TextWrapping="Wrap"/>
+
+                                        <Border Grid.Row="1"
+                                                Grid.Column="2"
+                                                Background="{DynamicResource Bg.Inset}"
+                                                BorderBrush="{DynamicResource Border.Control}"
+                                                BorderThickness="1"
+                                                CornerRadius="6">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                <StackPanel x:Name="panelAvailableFrames" Margin="8"/>
+                                            </ScrollViewer>
+                                        </Border>
+
+                                        <!-- Both button pairs share one row so the lists keep as
+                                             much height as possible (no panel scrolling). -->
+                                        <WrapPanel Grid.Row="2"
+                                                   Grid.Column="0"
+                                                   Grid.ColumnSpan="5"
+                                                   Orientation="Horizontal"
+                                                   Margin="0,8,0,0">
+                                            <Button x:Name="btnAddFrames"
+                                                    Content="Add ticked frames"
+                                                    Padding="10,5"/>
+                                            <Button x:Name="btnAddAllFrames"
+                                                    Content="Add all frames"
+                                                    Margin="6,0,0,0"
+                                                    Padding="10,5"/>
+                                            <Button x:Name="btnRemoveStates"
+                                                    Content="Remove ticked"
+                                                    Margin="26,0,0,0"
+                                                    Padding="10,5"/>
+                                            <Button x:Name="btnClearStates"
+                                                    Content="Clear all"
+                                                    Margin="6,0,0,0"
+                                                    Padding="10,5"/>
+                                        </WrapPanel>
+
+                                        <TextBlock x:Name="lblSelectedStates"
+                                                   Grid.Row="0"
+                                                   Grid.Column="4"
+                                                   Text="Selected Step / Frame states"
+                                                   Style="{StaticResource FieldLabel}"
+                                                   TextWrapping="Wrap"/>
+
+                                        <Border Grid.Row="1"
+                                                Grid.Column="4"
+                                                Background="{DynamicResource Bg.Inset}"
+                                                BorderBrush="{DynamicResource Border.Control}"
+                                                BorderThickness="1"
+                                                CornerRadius="6">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                <StackPanel x:Name="panelSelectedStates" Margin="8"/>
+                                            </ScrollViewer>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="grpFields" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBlock x:Name="hdrFields" Grid.Row="0" Text="Fields" Style="{StaticResource SectionTitle}"/>
+
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,8">
                                     <Button x:Name="btnReadFields"
                                             Content="Read fields from selected frame"
-                                            Width="190"
-                                            HorizontalAlignment="Left"/>
-                                    <StackPanel Orientation="Horizontal" Margin="0,5,0,4">
-                                        <Button x:Name="btnSelectAllFields" Content="Select all" Width="78"/>
-                                        <Button x:Name="btnClearFields" Content="Clear" Width="68" Margin="5,0,0,0"/>
-                                    </StackPanel>
-                                    <Border Background="White"
-                                            BorderBrush="#AEAEAE"
-                                            BorderThickness="1"
-                                            Height="170">
-                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                            <StackPanel x:Name="panelFields" Margin="5"/>
-                                        </ScrollViewer>
-                                    </Border>
+                                            Padding="16,6"/>
+                                    <Button x:Name="btnSelectAllFields" Content="Select all" Margin="8,0,0,0" Padding="13,5"/>
+                                    <Button x:Name="btnClearFields" Content="Clear" Margin="6,0,0,0" Padding="13,5"/>
                                 </StackPanel>
-                            </Expander>
 
-                            <Expander x:Name="grpDerived" Header="Derived Fields" IsExpanded="True">
-                                <StackPanel Margin="8,5">
+                                <Border Grid.Row="2"
+                                        Background="{DynamicResource Bg.Control}"
+                                        BorderBrush="{DynamicResource Border.Control}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        MinHeight="150">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <StackPanel x:Name="panelFields" Margin="9"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Grid>
+
+                            <StackPanel x:Name="grpDerived" VerticalAlignment="Top" Visibility="Collapsed">
+                                <TextBlock x:Name="hdrDerived" Text="Derived Fields" Style="{StaticResource SectionTitle}"/>
+                                <StackPanel Margin="0,8,0,0">
                                     <CheckBox x:Name="chkMises" Content="Mises Stress"/>
                                     <CheckBox x:Name="chkInitialIPF" Content="Initial IPF (HCP Ti)"/>
 
-                                    <Grid Margin="0,5,0,0">
+                                    <Grid Margin="0,8,0,0">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="82"/>
+                                            <ColumnDefinition Width="88"/>
                                             <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="36"/>
+                                            <ColumnDefinition Width="40"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="lblInpFile" Text="INP File" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="lblInpFile" Text="INP File" Style="{StaticResource FieldLabel}"/>
                                         <TextBox x:Name="txtInp" Grid.Column="1"/>
-                                        <Button x:Name="btnBrowseInp" Grid.Column="2" Content="..." Margin="4,0,0,0"/>
+                                        <Button x:Name="btnBrowseInp" Grid.Column="2" Content="…" Margin="6,0,0,0"/>
                                     </Grid>
 
-                                    <Grid Margin="0,5,0,0">
+                                    <Grid Margin="0,8,0,0">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="82"/>
-                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="88"/>
+                                            <ColumnDefinition Width="130"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="lblIPFDir" Text="IPF Direction" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="lblIPFDir" Text="IPF Direction" Style="{StaticResource FieldLabel}"/>
                                         <ComboBox x:Name="cmbIPFDir" Grid.Column="1">
                                             <ComboBoxItem Content="X" Tag="X"/>
                                             <ComboBoxItem Content="Y" Tag="Y"/>
@@ -368,31 +1216,32 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
 
                                     <TextBlock x:Name="txtDerivedHint"
                                                Text="Mises is derived from S. Initial IPF reads Grain material Euler angles from INP PROPS(1:3)."
-                                               Foreground="#555" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                                               Style="{StaticResource HintText}"/>
                                 </StackPanel>
-                            </Expander>
+                            </StackPanel>
 
-                            <Expander x:Name="grpGND" Header="GND Evolution" IsExpanded="True">
-                                <StackPanel Margin="8,5">
+                            <StackPanel x:Name="grpGND" VerticalAlignment="Top" Visibility="Collapsed">
+                                <TextBlock x:Name="hdrGND" Text="GND Evolution" Style="{StaticResource SectionTitle}"/>
+                                <StackPanel Margin="0,8,0,0">
                                     <CheckBox x:Name="chkGNDDiff" Content="Compare gnd_field.dat with SDV11-28"/>
 
-                                    <Grid Margin="0,5,0,0">
+                                    <Grid Margin="0,8,0,0">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="82"/>
+                                            <ColumnDefinition Width="88"/>
                                             <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="36"/>
+                                            <ColumnDefinition Width="40"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="lblGNDDat" Text="GND DAT" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="lblGNDDat" Text="GND DAT" Style="{StaticResource FieldLabel}"/>
                                         <TextBox x:Name="txtGNDDat" Grid.Column="1"/>
-                                        <Button x:Name="btnBrowseGNDDat" Grid.Column="2" Content="..." Margin="4,0,0,0"/>
+                                        <Button x:Name="btnBrowseGNDDat" Grid.Column="2" Content="…" Margin="6,0,0,0"/>
                                     </Grid>
 
-                                    <Grid Margin="0,5,0,0">
+                                    <Grid Margin="0,8,0,0">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="82"/>
+                                            <ColumnDefinition Width="88"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="lblGNDMode" Text="Output" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="lblGNDMode" Text="Output" Style="{StaticResource FieldLabel}"/>
                                         <ComboBox x:Name="cmbGNDMode" Grid.Column="1">
                                             <ComboBoxItem Content="18 slip systems only" Tag="slips"/>
                                         </ComboBox>
@@ -400,14 +1249,14 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
 
                                     <CheckBox x:Name="chkGNDSlideDiff"
                                               Content="Sliding-start difference (18 slip systems)"
-                                              Margin="0,8,0,0"/>
+                                              Margin="0,10,0,0"/>
 
-                                    <Grid Margin="0,5,0,0">
+                                    <Grid Margin="0,8,0,0">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="82"/>
+                                            <ColumnDefinition Width="88"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="lblGNDSlideRef" Text="Reference" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="lblGNDSlideRef" Text="Reference" Style="{StaticResource FieldLabel}"/>
                                         <ComboBox x:Name="cmbGNDSlideRef" Grid.Column="1">
                                             <ComboBoxItem Content="First sliding Step / Frame 0" Tag="sliding0"/>
                                             <ComboBoxItem Content="Last frame before sliding" Tag="previous_last"/>
@@ -416,193 +1265,205 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
 
                                     <TextBlock x:Name="txtGNDHint"
                                                Text="DAT difference uses gnd_field.dat. Sliding-start difference uses a fixed ODB baseline and outputs 18 slip-system increments."
-                                               Foreground="#555" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                                               Style="{StaticResource HintText}"/>
                                 </StackPanel>
-                            </Expander>
+                            </StackPanel>
 
-                            <Expander x:Name="grpDifference" Header="Difference" IsExpanded="False">
-                                <StackPanel Margin="8,5">
+                            <StackPanel x:Name="grpDifference" VerticalAlignment="Top" Visibility="Collapsed">
+                                <TextBlock x:Name="hdrDifference" Text="Difference" Style="{StaticResource SectionTitle}"/>
+                                <StackPanel Margin="0,8,0,0">
                                     <CheckBox x:Name="chkDelta" Content="Enable target - reference"/>
-                                    <TextBlock x:Name="lblDiffField" Text="Field" Margin="0,5,0,2"/>
-                                    <ComboBox x:Name="cmbDeltaField"/>
-                                    <TextBlock x:Name="lblRefStep" Text="Reference Step" Margin="0,5,0,2"/>
-                                    <ComboBox x:Name="cmbRefStep"/>
-                                    <TextBlock x:Name="lblRefFrame" Text="Reference Frame" Margin="0,5,0,2"/>
-                                    <ComboBox x:Name="cmbRefFrame"/>
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" MinWidth="180"/>
+                                            <ColumnDefinition Width="16"/>
+                                            <ColumnDefinition Width="*" MinWidth="180"/>
+                                            <ColumnDefinition Width="16"/>
+                                            <ColumnDefinition Width="*" MinWidth="180"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock x:Name="lblDiffField" Text="Field" Style="{StaticResource FieldLabel}"/>
+                                            <ComboBox x:Name="cmbDeltaField" Margin="0,3"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock x:Name="lblRefStep" Text="Reference Step" Style="{StaticResource FieldLabel}"/>
+                                            <ComboBox x:Name="cmbRefStep" Margin="0,3"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="4">
+                                            <TextBlock x:Name="lblRefFrame" Text="Reference Frame" Style="{StaticResource FieldLabel}"/>
+                                            <ComboBox x:Name="cmbRefFrame" Margin="0,3"/>
+                                        </StackPanel>
+                                    </Grid>
                                 </StackPanel>
-                            </Expander>
+                            </StackPanel>
 
-                        </StackPanel>
-                    </ScrollViewer>
+                        </Grid>
+                    </Grid>
                 </DockPanel>
             </Border>
 
-            <GridSplitter Grid.Column="1"
-                          Width="7"
+            <!-- Vertical divider: options <-> selection summary. -->
+            <GridSplitter Grid.Row="0" Grid.Column="1"
+                          Width="8"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"
                           ResizeDirection="Columns"
                           ResizeBehavior="PreviousAndNext"
-                          ShowsPreview="True"
-                          Background="#AFAFAF"
                           Cursor="SizeWE"
                           ToolTip="拖动调整左侧操作栏宽度 / Drag to resize the left panel"/>
 
-            <!-- RIGHT: useful information only -->
-            <Grid Grid.Column="2" Background="#D7D7D7">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="5"/>
-                    <RowDefinition Height="230"/>
-                </Grid.RowDefinitions>
+            <!-- ============================ RIGHT: selection summary ============================ -->
+            <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource Card}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
+                        <TextBlock x:Name="hdrSummary" Text="Selection Summary" Style="{StaticResource SectionTitle}"/>
+                    </Border>
 
-                <Border Grid.Row="0"
-                        Background="#F3F3F3"
-                        BorderBrush="#A8A8A8"
-                        BorderThickness="1"
-                        Margin="6,6,6,0"
-                        Padding="8">
-                    <Grid>
-                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="120"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="36"/>
-                        </Grid.ColumnDefinitions>
+                    <TextBox x:Name="txtSummary"
+                             Height="Auto"
+                             VerticalAlignment="Stretch"
+                             VerticalContentAlignment="Top"
+                             IsReadOnly="True"
+                             BorderThickness="0"
+                             Background="{DynamicResource Bg.Panel}"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto"
+                             FontFamily="Consolas, Cascadia Mono"
+                             FontSize="12.5"
+                             Padding="12"/>
+                </DockPanel>
+            </Border>
 
-                        <TextBlock x:Name="lblBBox" Grid.Row="0" Text="Bounding Box" VerticalAlignment="Center"/>
-                        <TextBox x:Name="txtBBox" Grid.Row="0" Grid.Column="1"/>
+            <!-- Horizontal divider between the options area and the bottom console row. -->
+            <GridSplitter Grid.Row="1" Grid.ColumnSpan="3"
+                          Height="8"
+                          HorizontalAlignment="Stretch"
+                          ResizeDirection="Rows"
+                          ResizeBehavior="PreviousAndNext"
+                          Cursor="SizeNS"
+                          ToolTip="拖动调整底部输出区高度 / Drag to resize the bottom row"/>
 
-                        <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,6,0,0">
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+            <!-- ============================ BOTTOM: output | messages ============================ -->
+            <Grid Grid.Row="2" Grid.ColumnSpan="3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.35*"/>
+                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Border x:Name="cardOutput" Grid.Column="0" Style="{StaticResource Card}">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
+                            <TextBlock Text="Output" Style="{StaticResource SectionTitle}"/>
+                        </Border>
+
+                        <Grid Margin="12,10,12,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="205"/>
+                                <ColumnDefinition Width="18"/>
+                                <ColumnDefinition Width="2.4*" MinWidth="300"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Where the data goes. -->
+                            <StackPanel Grid.Column="0">
+                                <TextBlock x:Name="lblBBox" Text="Bounding Box" Style="{StaticResource FieldLabel}"/>
+                                <TextBox x:Name="txtBBox" Margin="0,4,0,0"/>
+
                                 <CheckBox x:Name="chkAutoOutput"
                                           Content="Auto-match ODB output folder"
                                           IsChecked="True"
-                                          VerticalAlignment="Center"/>
+                                          Margin="0,11,0,0"/>
+
                                 <Button x:Name="btnChooseOutputFolder"
                                         Content="Select Output Folder..."
-                                        Margin="12,0,0,0"/>
+                                        Margin="0,7,0,0"
+                                        Padding="13,5"
+                                        HorizontalAlignment="Left"/>
+
+                                <TextBlock x:Name="lblOutputFile" Text="Output File" Style="{StaticResource FieldLabel}" Margin="0,11,0,0"/>
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="40"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="txtOutput"/>
+                                    <Button x:Name="btnBrowseOutput" Grid.Column="1" Content="…" Margin="6,0,0,0"/>
+                                </Grid>
                             </StackPanel>
 
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="120"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="36"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock x:Name="lblOutputFile" Text="Output File" VerticalAlignment="Center"/>
-                                <TextBox x:Name="txtOutput" Grid.Column="1"/>
-                                <Button x:Name="btnBrowseOutput" Grid.Column="2" Content="..." Margin="4,0,0,0"/>
-                            </Grid>
-                        </StackPanel>
+                            <!-- Incremental update policy. -->
+                            <StackPanel Grid.Column="2">
+                                <TextBlock x:Name="lblIncPolicy" Text="增量更新策略 / Incremental Update Policy"
+                                           Style="{StaticResource SectionTitle}"/>
+                                <WrapPanel Margin="0,7,0,0">
+                                    <TextBlock Text="Frames" Style="{StaticResource FieldLabel}" Margin="0,0,6,0"/>
+                                    <ComboBox x:Name="cmbFramePolicy" SelectedIndex="0">
+                                        <ComboBoxItem Content="合并/保留既有帧 / Merge" Tag="merge"/>
+                                        <ComboBoxItem Content="同步当前选择 / Sync" Tag="sync"/>
+                                    </ComboBox>
+                                    <TextBlock Text="Fields" Style="{StaticResource FieldLabel}" Margin="14,0,6,0"/>
+                                    <ComboBox x:Name="cmbFieldPolicy" SelectedIndex="0">
+                                        <ComboBoxItem Content="合并/保留既有变量 / Merge" Tag="merge"/>
+                                        <ComboBoxItem Content="同步当前变量 / Sync" Tag="sync"/>
+                                    </ComboBox>
+                                </WrapPanel>
 
-                        <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Margin="0,8,0,0">
-                            <Separator Margin="0,0,0,7"/>
-                            <TextBlock Text="增量更新策略 / Incremental Update Policy"
-                                       FontWeight="SemiBold" Margin="0,0,0,5"/>
-                            <WrapPanel>
-                                <TextBlock Text="Frames" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                <ComboBox x:Name="cmbFramePolicy" Width="210" SelectedIndex="0">
-                                    <ComboBoxItem Content="合并/保留既有帧 / Merge" Tag="merge"/>
-                                    <ComboBoxItem Content="同步当前选择 / Sync" Tag="sync"/>
-                                </ComboBox>
-                                <TextBlock Text="Fields" VerticalAlignment="Center" Margin="12,0,5,0"/>
-                                <ComboBox x:Name="cmbFieldPolicy" Width="225" SelectedIndex="0">
-                                    <ComboBoxItem Content="合并/保留既有变量 / Merge" Tag="merge"/>
-                                    <ComboBoxItem Content="同步当前变量 / Sync" Tag="sync"/>
-                                </ComboBox>
-                            </WrapPanel>
-                            <WrapPanel Margin="0,7,0,0">
-                                <TextBlock x:Name="lblCompatMode" Text="旧版数据兼容模式" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="cmbCompatMode" Width="325" SelectedIndex="1">
+                                <TextBlock x:Name="lblCompatMode" Text="旧版数据兼容模式" Style="{StaticResource FieldLabel}" Margin="0,9,0,0"/>
+                                <ComboBox x:Name="cmbCompatMode" Margin="0,4,0,0" SelectedIndex="1">
                                     <ComboBoxItem Tag="standard" Content="标准增量（已有 Manifest）"/>
                                     <ComboBoxItem Tag="fast" Content="快速兼容（推荐，无 Manifest 自动迁移）"/>
                                     <ComboBoxItem Tag="strict" Content="严格验证（逐帧核对数值）"/>
                                 </ComboBox>
-                            </WrapPanel>
-                            <CheckBox x:Name="chkInPlace" Content="原位增量更新（不新建复制目录，保留原 VTU 文件名）"
-                                      IsChecked="False" Margin="0,5,0,0"/>
-                            <TextBlock x:Name="txtCompatHint" Text="勾选原位更新后使用同目录临时文件和回滚硬链接，成功后替换原 VTU。"
-                                       Foreground="#555" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                            <CheckBox x:Name="chkCleanupRemoved"
-                                      Content="同步帧时同时删除已移除帧的 VTU / Delete removed-frame VTU files"
-                                      IsChecked="False" Margin="0,5,0,0"/>
-                            <TextBlock Text="Merge 为安全默认；只有 Sync 才执行删除语义。"
-                                       Foreground="#555" Margin="0,4,0,0"/>
-                        </StackPanel>
-                    </Grid>
-                </Border>
 
-                <Border Grid.Row="1"
-                        Background="White"
-                        BorderBrush="#A7A7A7"
-                        BorderThickness="1"
-                        Margin="6">
-                    <DockPanel>
-                        <Border DockPanel.Dock="Top"
-                                Background="#E3E3E3"
-                                BorderBrush="#A7A7A7"
-                                BorderThickness="0,0,0,1"
-                                Padding="7,4">
-                            <TextBlock x:Name="hdrSummary" Text="Selection Summary" FontWeight="SemiBold"/>
-                        </Border>
-
-                        <TextBox x:Name="txtSummary"
-                                 Height="Auto"
-                                 VerticalAlignment="Stretch"
-                                 IsReadOnly="True"
-                                 BorderThickness="0"
-                                 Background="White"
-                                 AcceptsReturn="True"
-                                 TextWrapping="Wrap"
-                                 VerticalScrollBarVisibility="Auto"
-                                 FontFamily="Consolas"
-                                 FontSize="12"
-                                 Padding="8"/>
+                                <WrapPanel Margin="0,9,0,0">
+                                    <CheckBox x:Name="chkInPlace" Content="In-place update"
+                                              IsChecked="False" Margin="0,0,16,0"/>
+                                    <CheckBox x:Name="chkCleanupRemoved"
+                                              Content="Delete removed-frame VTUs"
+                                              IsChecked="False"/>
+                                </WrapPanel>
+                                <TextBlock x:Name="txtCompatHint" Text="In-place: temporary files are replaced atomically at the end."
+                                           Style="{StaticResource HintText}"/>
+                                <TextBlock x:Name="txtPolicyHint" Text="Merge 为安全默认；只有 Sync 才执行删除语义。"
+                                           Style="{StaticResource HintText}"/>
+                            </StackPanel>
+                        </Grid>
                     </DockPanel>
                 </Border>
 
-                <GridSplitter Grid.Row="2" Height="5" Background="#B6B6B6"/>
-
-                <Border Grid.Row="3"
-                        Background="White"
-                        BorderBrush="#A7A7A7"
-                        BorderThickness="1"
-                        Margin="6,0,6,6">
+                <Border Grid.Column="2" Style="{StaticResource Card}">
                     <DockPanel>
-                        <Border DockPanel.Dock="Top"
-                                Background="#E3E3E3"
-                                BorderBrush="#A7A7A7"
-                                BorderThickness="0,0,0,1"
-                                Padding="7,4">
+                        <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock x:Name="hdrMessages" Text="Output Messages" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="hdrMessages" Text="Output Messages" Style="{StaticResource SectionTitle}"/>
                                 <Button x:Name="btnClearMessages"
                                         Grid.Column="1"
                                         Content="Clear"
-                                        MinHeight="21"
-                                        Padding="7,1"/>
+                                        MinHeight="26"
+                                        Padding="11,2"/>
                             </Grid>
                         </Border>
 
                         <TextBox x:Name="txtMessages"
                                  Height="Auto"
+                                 MinHeight="150"
                                  VerticalAlignment="Stretch"
+                                 VerticalContentAlignment="Top"
                                  IsReadOnly="True"
                                  BorderThickness="0"
-                                 Background="White"
-                                 FontFamily="Consolas"
-                                 FontSize="11"
+                                 Background="{DynamicResource Bg.Panel}"
+                                 FontFamily="Consolas, Cascadia Mono"
+                                 FontSize="12"
                                  AcceptsReturn="True"
                                  TextWrapping="NoWrap"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto"
-                                 Padding="7"/>
+                                 Padding="12"/>
                     </DockPanel>
                 </Border>
             </Grid>
@@ -611,24 +1472,57 @@ $analysisFieldsJson = Join-Path $scriptDir "_analysis_fields.json"
 </Window>
 "@
 
-$reader = New-Object System.Xml.XmlNodeReader $xaml
-$window = [Windows.Markup.XamlReader]::Load($reader)
+# Unified branding. The shipped application icon is applied to the main window
+# and to every child window so the title bar / taskbar icon always matches the
+# packaged executable. The .ico is preferred (it carries a crisp 16x16 frame),
+# the .png is the fallback when the ICO frame cannot be decoded.
+$script:iconIco = Join-Path $scriptDir 'icons\odb2vtu-s-exporter.ico'
+$script:iconPng = Join-Path $scriptDir 'icons\odb2vtu-s-exporter.png'
+
+function Set-AppIcon($win){
+    if($win -eq $null){ return }
+    foreach($p in @($script:iconIco, $script:iconPng)){
+        if([string]::IsNullOrWhiteSpace($p)){ continue }
+        if(-not (Test-Path -LiteralPath $p)){ continue }
+        try{
+            $fs = [IO.File]::Open($p, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+            try{
+                $frame = [Windows.Media.Imaging.BitmapFrame]::Create($fs)
+                if($frame -ne $null){ $win.Icon = $frame; return }
+            } finally { $fs.Close() }
+        } catch { }
+    }
+}
+
+# Every window carries the same base name; only the role suffix differs.
+function Get-AppTitle([string]$role){
+    $base = L "Window"
+    if([string]::IsNullOrWhiteSpace($role)){ return $base }
+    return $base + " - " + $role
+}
+
+$window = [Windows.Markup.XamlReader]::Parse($xaml)
+Set-AppIcon $window
 
 $names = @(
 "menuFile","miOpen","miExit","menuEdit","menuView","menuTools","miCurveData","miFieldAnalysis","miCPFEM","miDataSafety","menuHelp",
-"tbOpen","tbRead","tbFields","tbExport","tbOpenFolder","lblLanguage","cmbLanguage",
-"hdrProperties","btnApply","btnReset",
+"tbOpen","tbOpenFolder","tbOpenText","tbOpenFolderText","lblTheme","cmbTheme","lblLanguage","cmbLanguage",
+"stepDot1","stepNum1","stepLbl1","stepDot2","stepNum2","stepLbl2","stepDot3","stepNum3","stepLbl3","stepDot4","stepNum4","stepLbl4","stepDot5","stepNum5","stepLbl5","btnNextStep","btnNextStepText",
+"hdrProperties","btnReset","btnResetText","cardOutput",
+"navList","navGroupData","navSource","navTarget","navGroupSeries","navSeries","navGroupFields","navFields","navDerived","navGND","navDifference",
+"hdrSource","hdrTarget","hdrSeries","hdrFields","hdrDerived","hdrGND","hdrDifference",
 "grpSource","lblOdbFile","txtOdb","btnBrowse","btnRead",
-"grpTarget","lblInstance","cmbInstance","lblElementSet","cmbElementSet","lblStep","cmbStep","lblFrame","cmbFrame",
-"grpSeries","chkSeries","panelSeries","txtSeriesHint","lblSeriesStep","lstSeriesSteps",
-"lblAvailableFrames","lstAvailableFrames","btnAddFrames","btnAddAllFrames",
-"lblSelectedStates","lstSelectedStates","btnRemoveStates","btnClearStates",
+"grpTarget","lblTargetSel","lblInstance","cmbInstance","lblElementSet","cmbElementSet","lblTargetBrowse","lblStep","cmbStep","lblFrame","cmbFrame","txtTargetHint",
+"grpSeries","chkSeries","panelSeries","txtSeriesHint","lblSeriesStep","panelSeriesSteps",
+"lblAvailableFrames","panelAvailableFrames","btnAddFrames","btnAddAllFrames",
+"lblSelectedStates","panelSelectedStates","btnRemoveStates","btnClearStates",
 "grpFields","btnReadFields","btnSelectAllFields","btnClearFields","panelFields",
 "grpDerived","chkMises","chkInitialIPF","lblInpFile","txtInp","btnBrowseInp","lblIPFDir","cmbIPFDir","txtDerivedHint",
 "grpGND","chkGNDDiff","lblGNDDat","txtGNDDat","btnBrowseGNDDat","lblGNDMode","cmbGNDMode","chkGNDSlideDiff","lblGNDSlideRef","cmbGNDSlideRef","txtGNDHint",
 "grpDifference","chkDelta","lblDiffField","cmbDeltaField","lblRefStep","cmbRefStep","lblRefFrame","cmbRefFrame",
 "lblBBox","txtBBox","chkAutoOutput","btnChooseOutputFolder","lblOutputFile","txtOutput","btnBrowseOutput",
 "cmbFramePolicy","cmbFieldPolicy","cmbCompatMode","lblCompatMode","txtCompatHint","chkInPlace","chkCleanupRemoved",
+"lblIncPolicy","txtPolicyHint",
 "hdrSummary","txtSummary","hdrMessages","btnClearMessages","txtMessages",
 "txtStatus","txtStatusRight"
 )
@@ -636,9 +1530,111 @@ foreach($n in $names){
     Set-Variable -Name $n -Value $window.FindName($n) -Scope Script
 }
 
+# ---- option tree -> page switch ---------------------------------------------
+# The properties card shows one section at a time (tree item on the left, that
+# section's options on the right). Every section element keeps its name, so the
+# wizard gating and the language switch keep working on hidden pages.
+$script:navPageByName = @{
+    "Source"     = $grpSource
+    "Target"     = $grpTarget
+    "Series"     = $grpSeries
+    "Fields"     = $grpFields
+    "Derived"    = $grpDerived
+    "GND"        = $grpGND
+    "Difference" = $grpDifference
+}
+
+function Show-NavPage([string]$key){
+    if([string]::IsNullOrEmpty($key)){ return }
+
+    foreach($k in $script:navPageByName.Keys){
+        $p = $script:navPageByName[$k]
+        if($p -eq $null){ continue }
+        if($k -eq $key){ $p.Visibility = [Windows.Visibility]::Visible }
+        else { $p.Visibility = [Windows.Visibility]::Collapsed }
+    }
+
+    # Keep the tree highlight in sync when the wizard jumps to a section.
+    if($navList -ne $null){
+        foreach($it in $navList.Items){
+            if($it.Tag -ne $null -and $it.Tag.ToString() -eq $key){
+                if($navList.SelectedItem -ne $it){ $navList.SelectedItem = $it }
+                break
+            }
+        }
+    }
+}
+
+# Guided-rail element cache: built once because the rail is refreshed on every
+# summary update (i.e. on every keystroke in the bounding-box / ODB fields).
+$script:wizardUi = @()
+for($wi = 1; $wi -le 5; $wi++){
+    $script:wizardUi += [pscustomobject]@{
+        Dot   = (Get-Variable -Name ("stepDot$wi") -Scope Script -ValueOnly)
+        Num   = (Get-Variable -Name ("stepNum$wi") -Scope Script -ValueOnly)
+        Label = (Get-Variable -Name ("stepLbl$wi") -Scope Script -ValueOnly)
+    }
+}
+$script:wizardStep = 0
+$script:wizardAction = $null
+
 $global:meta = $null
 $script:lang = "zh"
 $script:fieldBoxes = New-Object System.Collections.Generic.List[object]
+# Time-series panel lists use checkboxes (like the field list) so multi-selection
+# needs no Ctrl/Shift.
+$script:seriesStepBoxes = New-Object System.Collections.Generic.List[object]
+$script:frameBoxes = New-Object System.Collections.Generic.List[object]
+$script:stateBoxes = New-Object System.Collections.Generic.List[object]
+
+# ---- checkbox multi-selection ------------------------------------------------
+# Every checkbox list keeps working as a plain tick list, but also honours the
+# familiar file-manager gestures:
+#   plain click / Ctrl+click : toggle the single clicked box
+#   Shift+click              : toggle every box between the last clicked box and
+#                              the clicked one (the clicked box sets the value)
+# The last clicked index is remembered per list in $script:checkAnchors.
+$script:checkAnchors = @{}
+
+function Set-CheckRangeValue($list, $anchors, [string]$key, [int]$idx, [bool]$shift){
+    if($list -eq $null -or $anchors -eq $null){ return }
+    if($idx -lt 0 -or $idx -ge $list.Count){ return }
+
+    $val = [bool]$list[$idx].IsChecked
+    $a = [int]$anchors[$key]
+
+    if($shift -and $a -ge 0 -and $a -lt $list.Count -and $a -ne $idx){
+        $lo = [Math]::Min($a, $idx)
+        $hi = [Math]::Max($a, $idx)
+        for($j = $lo; $j -le $hi; $j++){
+            if($j -ne $idx){ $list[$j].IsChecked = $val }
+        }
+        # Keep the original anchor so repeated Shift+clicks grow / shrink one range.
+    } else {
+        $anchors[$key] = $idx
+    }
+}
+
+function Enable-CheckListKeys([string]$key, $boxes, $after = $null){
+    if($boxes -eq $null -or $boxes.Count -eq 0){ return }
+
+    $anchors = $script:checkAnchors
+    $anchors[$key] = -1
+
+    for($i = 0; $i -lt $boxes.Count; $i++){
+        $box   = $boxes[$i]
+        $list  = $boxes
+        $idx   = $i
+        $k     = $key
+        $tail  = $after
+
+        $box.Add_Click({
+            $shift = (([Windows.Input.Keyboard]::Modifiers -band [Windows.Input.ModifierKeys]::Shift) -ne 0)
+            Set-CheckRangeValue $list $anchors $k $idx $shift
+            if($tail -ne $null){ & $tail }
+        }.GetNewClosure())
+    }
+}
 
 # Each entry: PSCustomObject {Step, Frame, Display}
 $script:selectedStates = New-Object System.Collections.ArrayList
@@ -646,33 +1642,45 @@ $script:selectedStates = New-Object System.Collections.ArrayList
 $T = @{
 en = @{
 Window="ODB2VTU-S Workbench"; File="_File"; Open="Open ODB..."; Exit="Exit"; Edit="_Edit"; View="_View"; Tools="_Tools"; Help="_Help";
-OpenODB="Open ODB"; ReadMeta="Read Metadata"; ReadFields="Read Fields"; Export="Export Data"; OpenFolder="Open Output Folder"; Language="Language";
-Properties="Properties"; CurveData="Curve Data..."; FieldAnalysis="Field Extremum Analysis..."; Apply="Apply"; Reset="Reset";
+OpenODB="Open ODB"; ReadMeta="Read Metadata"; ReadFields="Read Fields"; Export="Export Data"; OpenFolder="Open Output Folder"; Language="Language"; Theme="Theme"; ThemeLight="Light"; ThemeDark="Dark";
+Properties="Properties"; CurveData="Curve Data..."; FieldAnalysis="Field Extremum Analysis..."; CPFEM="Friction CPFEM (History / PEEQCP)..."; DataSafety="Data Diagnosis and Safe Recovery..."; Apply="Apply"; Reset="Reset";
 Source="Source"; ODBFile="ODB File"; Target="Target"; Instance="Instance"; ElementSet="Element Set"; Step="Step"; Frame="Frame";
+NavGroupData="Data / target"; NavGroupSeries="Time series"; NavGroupFields="Field variables";
+TargetSelection="Selection (export scope)"; TargetBrowse="Browse / verify (no selection needed)";
+TargetHint="Step / Frame are only used to browse and cross-check the ODB (for reading field variables). In single-frame mode the exported frame is the one being browsed; in time-series mode the ticked states above decide the export.";
 Series="Time Series"; EnableSeries="Export as ParaView time series (.pvd)";
-SeriesHint="Ctrl/Shift-select one or more Steps, then select frame indices to add to all selected Steps. Drag the vertical divider to widen the left panel if names are truncated.";
-SeriesStep="Steps"; AvailableFrames="Common frames"; AddFrames="Add selected frames to selected Steps"; AddAllFrames="Add all common frames";
-SelectedStates="Selected Step / Frame states"; RemoveStates="Remove selected"; ClearStates="Clear all";
+SeriesHint="Tick Steps (Shift / Ctrl selects ranges), then tick the frames to add. Drag the vertical divider to widen the list area.";
+SeriesStep="Steps"; AvailableFrames="Common frames"; AddFrames="Add ticked frames"; AddAllFrames="Add all frames";
+SelectedStates="Selected Step / Frame states"; RemoveStates="Remove ticked"; ClearStates="Clear all";
 Fields="Fields"; ReadFrameFields="Read fields from selected frame"; SelectAll="Select all"; Clear="Clear"; Derived="Derived Fields"; Mises="Mises Stress"; InitialIPF="Initial IPF (HCP Ti)"; INPFile="INP File"; IPFDirection="IPF Direction"; DerivedHint="Mises is derived from S. Initial IPF reads Grain material Euler angles from INP PROPS(1:3)."; GND="GND Evolution"; GNDDiff="Compare gnd_field.dat with SDV11-28"; GNDDat="GND DAT"; GNDMode="Output"; GNDHint="DAT difference uses gnd_field.dat. Sliding-start difference uses a fixed ODB baseline and outputs 18 slip-system increments."; GNDSlideDiff="Sliding-start difference (18 slip systems)"; GNDSlideRef="Reference";
 Difference="Difference"; EnableDiff="Enable target - reference"; DiffField="Field"; RefStep="Reference Step"; RefFrame="Reference Frame";
 BBox="Bounding Box"; AutoOutput="Auto-match ODB output folder"; SelectOutputFolder="Select Output Folder..."; OutputFile="Output File"; Summary="Selection Summary"; Messages="Output Messages";
+IncPolicy="Incremental Update Policy"; PolicyHint="Merge is the safe default; only Sync deletes.";
 Ready="Ready"; NoODB="ODB: not loaded"; Whole="<Whole Instance>"; AllGrains="<All Grains>";
-SeriesCount="Selected states"
+SeriesCount="Selected states";
+StepSource="Source"; StepState="State"; StepFields="Fields"; StepOutput="Output"; StepExport="Export"; Next="Next";
+PickState="Select instance / element set"; PickFields="Select fields to export"; PickOutput="Choose output file"
 }
 zh = @{
 Window="ODB2VTU-S 统一工作台"; File="_文件"; Open="打开 ODB..."; Exit="退出"; Edit="_编辑"; View="_视图"; Tools="_工具"; Help="_帮助";
-OpenODB="打开 ODB"; ReadMeta="读取元数据"; ReadFields="读取场变量"; Export="导出数据"; OpenFolder="打开输出文件夹"; Language="语言";
-Properties="属性"; CurveData="曲线数据..."; FieldAnalysis="场变量极值分析..."; Apply="应用"; Reset="重置";
+OpenODB="打开 ODB"; ReadMeta="读取元数据"; ReadFields="读取场变量"; Export="导出数据"; OpenFolder="打开输出文件夹"; Language="语言"; Theme="主题"; ThemeLight="亮色"; ThemeDark="深色";
+Properties="属性"; CurveData="曲线数据..."; FieldAnalysis="场变量极值分析..."; CPFEM="摩擦 CPFEM 后处理（History / PEEQCP）..."; DataSafety="数据诊断与安全恢复..."; Apply="应用"; Reset="重置";
 Source="数据源"; ODBFile="ODB 文件"; Target="目标状态"; Instance="实例"; ElementSet="单元集"; Step="分析步"; Frame="帧";
+NavGroupData="数据与目标"; NavGroupSeries="时序"; NavGroupFields="场变量";
+TargetSelection="选择项（决定导出范围）"; TargetBrowse="浏览 / 核对（无需选择）";
+TargetHint="分析步 / 帧 只用于浏览和核对 ODB（读取场变量时使用）。单帧模式下导出当前浏览的这一帧；时序模式下以上方勾选的分析步与帧为准。";
 Series="时间序列"; EnableSeries="导出为 ParaView 时间序列 (.pvd)";
-SeriesHint="用 Ctrl/Shift 同时选择一个或多个分析步，再选择帧编号；所选帧会同时添加到这些分析步。若名称显示不全，可拖动中间竖向分隔条加宽左侧操作栏。";
-SeriesStep="分析步（可多选）"; AvailableFrames="公共可选帧"; AddFrames="将所选帧添加到所选分析步"; AddAllFrames="添加全部公共帧";
-SelectedStates="已选分析步 / 帧"; RemoveStates="移除所选"; ClearStates="清空全部";
+SeriesHint="勾选分析步（Shift / Ctrl 可整段勾选），再勾选要添加的帧。名称显示不全时可拖动竖向分隔条加宽。";
+SeriesStep="分析步（可多选）"; AvailableFrames="公共可选帧"; AddFrames="添加勾选的帧"; AddAllFrames="添加全部帧";
+SelectedStates="已选分析步 / 帧"; RemoveStates="移除勾选项"; ClearStates="清空全部";
 Fields="场变量"; ReadFrameFields="读取当前帧场变量"; SelectAll="全选"; Clear="清空"; Derived="派生场"; Mises="Mises 应力"; InitialIPF="初始 IPF（HCP Ti）"; INPFile="INP 文件"; IPFDirection="IPF 方向"; DerivedHint="Mises 由 S 计算；初始 IPF 从 INP 中各 Grain 材料的 PROPS(1:3) 欧拉角生成。"; GND="GND 增量"; GNDDiff="计算 gnd_field.dat 与 SDV11-28 差值"; GNDDat="GND DAT"; GNDMode="输出"; GNDHint="DAT差值：当前SDV11-28减去gnd_field.dat初始分配值；滑动起点差值：当前SDV11-28减去滑动开始参考帧。均输出18个滑移系。"; GNDSlideDiff="滑动起点差值（18滑移系）"; GNDSlideRef="参考帧";
 Difference="差值"; EnableDiff="启用 目标帧 - 参考帧"; DiffField="场变量"; RefStep="参考分析步"; RefFrame="参考帧";
 BBox="包围盒"; AutoOutput="自动匹配 ODB 输出目录"; SelectOutputFolder="选择输出文件夹..."; OutputFile="输出文件"; Summary="选择摘要"; Messages="输出消息";
+IncPolicy="增量更新策略"; PolicyHint="Merge 为安全默认；只有 Sync 才执行删除语义。";
 Ready="就绪"; NoODB="ODB：未加载"; Whole="<整个实例>"; AllGrains="<所有晶粒>";
-SeriesCount="已选状态数"
+SeriesCount="已选状态数";
+StepSource="数据源"; StepState="目标状态"; StepFields="场变量"; StepOutput="输出"; StepExport="导出"; Next="下一步";
+PickState="选择实例 / 单元集"; PickFields="选择要导出的场变量"; PickOutput="选择输出文件"
 }
 }
 
@@ -682,6 +1690,7 @@ function L([string]$k){ return $T[$script:lang][$k] }
 function Localize-SubwindowXaml([xml]$Document, [string]$Lang) {
     $pairs = @{
       'Field Extremum Analysis'=@('场变量极值分析','Field Extremum Analysis')
+      'ODB2VTU-S Workbench - Field Extremum Analysis'=@('ODB2VTU-S 统一工作台 - 场变量极值分析','ODB2VTU-S Workbench - Field Extremum Analysis')
       'Top N grains'=@('晶粒数量 Top N','Top N grains')
       'Rank statistic'=@('排序统计量','Rank statistic')
       'Direction'=@('排序方向','Direction')
@@ -718,6 +1727,7 @@ function Localize-SubwindowXaml([xml]$Document, [string]$Lang) {
 
 $script:customFieldOutputDir = ""
 $script:customCurveOutputDir = ""
+$script:exportProc = $null
 
 function Get-AutoOutputDirectory([string]$odbPath){
     if([string]::IsNullOrWhiteSpace($odbPath)){ return "" }
@@ -771,6 +1781,7 @@ function Set-FieldOutputPath([string]$odbPath){
 }
 
 function Choose-FieldOutputFolder {
+    Ensure-WinForms
     $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
     $dlg.Description = "选择导出文件夹 / Select output folder"
 
@@ -790,7 +1801,7 @@ function Choose-FieldOutputFolder {
 }
 
 function Q([string]$s){
-    return '"' + $s.Replace('"','\"') + '"'
+    return '"' + ($s -replace '"','""') + '"'
 }
 
 function FrameIndex($combo){
@@ -802,9 +1813,18 @@ function FrameIndexFromLabel([string]$label){
     return [int](($label.Split("|")[0]).Trim())
 }
 
+function Write-LogBox($box, [string]$s){
+    $box.AppendText("[" + (Get-Date -Format "HH:mm:ss") + "] " + $s + "`r`n")
+    # Keep the console bounded so very long series exports cannot slow the UI down.
+    if($box.LineCount -gt 4000){
+        $lines = $box.Text -split "`r?`n"
+        $box.Text = ($lines[($lines.Count - 2000)..($lines.Count - 1)] -join "`r`n")
+    }
+    $box.ScrollToEnd()
+}
+
 function Msg([string]$s){
-    $txtMessages.AppendText("[" + (Get-Date -Format "HH:mm:ss") + "] " + $s + "`r`n")
-    $txtMessages.ScrollToEnd()
+    Write-LogBox $txtMessages $s
 }
 
 function PopulateFrameCombo($combo, [string]$stepName, [bool]$lastDefault){
@@ -827,21 +1847,15 @@ function PopulateFrameCombo($combo, [string]$stepName, [bool]$lastDefault){
 
 function GetSelectedSeriesSteps {
     $steps = New-Object System.Collections.Generic.List[string]
-    foreach($item in $lstSeriesSteps.SelectedItems){
-        $label = $item.ToString()
-        # Display format: StepName  [N frames]
-        $idx = $label.LastIndexOf("  [")
-        if($idx -gt 0){
-            $steps.Add($label.Substring(0,$idx))
-        } else {
-            $steps.Add($label)
-        }
+    foreach($cb in $script:seriesStepBoxes){
+        if($cb.IsChecked){ $steps.Add($cb.Tag.ToString()) }
     }
     return $steps
 }
 
 function PopulateCommonSeriesFrames {
-    $lstAvailableFrames.Items.Clear()
+    $panelAvailableFrames.Children.Clear()
+    $script:frameBoxes.Clear()
 
     if($global:meta -eq $null){ return }
 
@@ -878,8 +1892,15 @@ function PopulateCommonSeriesFrames {
                 $lab = "$i"
             }
         }
-        [void]$lstAvailableFrames.Items.Add($lab)
+        $cbF = New-Object Windows.Controls.CheckBox
+        $cbF.Content = $lab
+        $cbF.Tag = $lab
+        $cbF.Margin = "0,1,0,1"
+        [void]$panelAvailableFrames.Children.Add($cbF)
+        $script:frameBoxes.Add($cbF)
     }
+
+    Enable-CheckListKeys "frames" $script:frameBoxes
 }
 
 function SelectedFields {
@@ -898,8 +1919,10 @@ function StateExists([string]$step, [int]$frame){
 }
 
 function RefreshSelectedStates {
+    $panelSelectedStates.Children.Clear()
+    $script:stateBoxes.Clear()
+
     if($global:meta -eq $null){
-        $lstSelectedStates.Items.Clear()
         return
     }
 
@@ -916,12 +1939,17 @@ function RefreshSelectedStates {
         Sort-Object @{Expression={$order[$_.Step]}}, @{Expression={[int]$_.Frame}}
     )
 
-    $lstSelectedStates.Items.Clear()
     foreach($x in $sorted){
         $label = $x.Step + "  |  Frame " + $x.Frame
-        [void]$lstSelectedStates.Items.Add($label)
+        $cbS = New-Object Windows.Controls.CheckBox
+        $cbS.Content = $label
+        $cbS.Tag = $label
+        $cbS.Margin = "0,1,0,1"
+        [void]$panelSelectedStates.Children.Add($cbS)
+        $script:stateBoxes.Add($cbS)
     }
 
+    Enable-CheckListKeys "states" $script:stateBoxes
     UpdateSummary
 }
 
@@ -932,12 +1960,12 @@ function AddFramesToSelectedSteps([bool]$allFrames){
     $labels = @()
 
     if($allFrames){
-        foreach($item in $lstAvailableFrames.Items){
-            $labels += $item.ToString()
+        foreach($cb in $script:frameBoxes){
+            $labels += $cb.Tag.ToString()
         }
     } else {
-        foreach($item in $lstAvailableFrames.SelectedItems){
-            $labels += $item.ToString()
+        foreach($cb in $script:frameBoxes){
+            if($cb.IsChecked){ $labels += $cb.Tag.ToString() }
         }
     }
 
@@ -968,7 +1996,9 @@ function AddFramesToSelectedSteps([bool]$allFrames){
 
 function RemoveSelectedStates {
     $labels = @()
-    foreach($item in $lstSelectedStates.SelectedItems){ $labels += $item.ToString() }
+    foreach($cb in $script:stateBoxes){
+        if($cb.IsChecked){ $labels += $cb.Tag.ToString() }
+    }
 
     foreach($label in $labels){
         # Display syntax: StepName  |  Frame N
@@ -1043,56 +2073,181 @@ function RefreshElementSetLanguage {
     $cmbElementSet.SelectedIndex = 0
 }
 
+function Set-WizardEnabled($el, [bool]$on){
+    if($el -eq $null){ return }
+    $el.IsEnabled = $on
+    if($on){ $el.Opacity = 1.0 } else { $el.Opacity = 0.55 }
+}
+
+# Guided workflow. Five steps: 1 source, 2 target state, 3 fields, 4 output,
+# 5 export. The first unfinished step becomes "current"; everything after it is
+# disabled and dimmed so the user is walked through the workflow in order, while
+# earlier steps stay editable so corrections are always possible. The rail's
+# call-to-action button runs, or focuses, whatever the current step still needs.
+function Update-WizardState {
+    if($window -eq $null -or $script:wizardUi.Count -eq 0){ return }
+
+    $s1 = ($global:meta -ne $null)
+
+    # Step 2 is satisfied by the real selections (instance / element set, plus at
+    # least one ticked Step-Frame state in time-series mode). Step and Frame are
+    # browse-only helpers and never block the workflow.
+    $s2 = ($cmbInstance.SelectedItem -ne $null -and $cmbElementSet.SelectedItem -ne $null)
+    if([bool]$chkSeries.IsChecked){
+        $s2 = $s2 -and ($script:selectedStates.Count -gt 0)
+    }
+
+    $s3 = (@(SelectedFields).Count -gt 0)
+    if(-not $s3){
+        $s3 = [bool]$chkMises.IsChecked -or [bool]$chkInitialIPF.IsChecked -or
+              [bool]$chkGNDDiff.IsChecked -or [bool]$chkGNDSlideDiff.IsChecked
+    }
+
+    $s4 = -not [string]::IsNullOrWhiteSpace($txtOutput.Text)
+
+    $done = @($s1, $s2, $s3, $s4)
+
+    $cur = 5
+    for($i = 0; $i -lt 4; $i++){
+        if(-not $done[$i]){ $cur = $i + 1; break }
+    }
+    $script:wizardStep = $cur
+
+    for($i = 1; $i -le 5; $i++){
+        $u = $script:wizardUi[$i - 1]
+        if($u.Dot -eq $null){ continue }
+        if($i -lt $cur){
+            $u.Dot.Style = $window.Resources['StepDotDone']
+            $u.Num.Style = $window.Resources['StepNumberDone']
+            $u.Num.Text  = [string][char]0x2713
+            $u.Label.Style = $window.Resources['StepLabelDone']
+        } elseif($i -eq $cur){
+            $u.Dot.Style = $window.Resources['StepDotCurrent']
+            $u.Num.Style = $window.Resources['StepNumberCurrent']
+            $u.Num.Text  = [string]$i
+            $u.Label.Style = $window.Resources['StepLabelCurrent']
+        } else {
+            $u.Dot.Style = $window.Resources['StepDot']
+            $u.Num.Style = $window.Resources['StepNumber']
+            $u.Num.Text  = [string]$i
+            $u.Label.Style = $window.Resources['StepLabel']
+        }
+    }
+
+    Set-WizardEnabled $grpTarget     ($cur -ge 2)
+    Set-WizardEnabled $grpSeries     ($cur -ge 2)
+    Set-WizardEnabled $grpFields     ($cur -ge 3)
+    Set-WizardEnabled $grpDerived    ($cur -ge 3)
+    Set-WizardEnabled $grpGND        ($cur -ge 3)
+    Set-WizardEnabled $grpDifference ($cur -ge 3)
+    Set-WizardEnabled $cardOutput    ($cur -ge 4)
+
+    $label = L "Next"
+    if($cur -eq 1){
+        if([string]::IsNullOrWhiteSpace($txtOdb.Text)){
+            $label = L "OpenODB"
+            $script:wizardAction = { Show-NavPage "Source"; BrowseODB }
+        } else {
+            $label = L "ReadMeta"
+            $script:wizardAction = { Show-NavPage "Source"; ReadMeta }
+        }
+    } elseif($cur -eq 2){
+        $label = L "PickState"
+        $script:wizardAction = {
+            Show-NavPage "Target"
+            if($cmbInstance.SelectedItem -eq $null -and $cmbInstance.Items.Count -gt 0){
+                $cmbInstance.IsDropDownOpen = $true
+            } elseif($cmbElementSet.SelectedItem -eq $null -and $cmbElementSet.Items.Count -gt 0){
+                $cmbElementSet.IsDropDownOpen = $true
+            } elseif([bool]$chkSeries.IsChecked){
+                if($script:seriesStepBoxes.Count -gt 0){ $script:seriesStepBoxes[0].Focus() | Out-Null }
+            } else {
+                Show-NavPage "Target"
+            }
+        }
+    } elseif($cur -eq 3){
+        if($script:fieldBoxes.Count -eq 0){
+            $label = L "ReadFields"
+            $script:wizardAction = { Show-NavPage "Fields"; ReadFields }
+        } else {
+            $label = L "PickFields"
+            $script:wizardAction = {
+                Show-NavPage "Fields"
+                if($script:fieldBoxes.Count -gt 0){ $script:fieldBoxes[0].Focus() | Out-Null }
+            }
+        }
+    } elseif($cur -eq 4){
+        $label = L "PickOutput"
+        $script:wizardAction = { $txtOutput.Focus() | Out-Null }
+    } else {
+        $label = L "Export"
+        $script:wizardAction = { RunExport }
+    }
+    $btnNextStepText.Text = $label
+}
+
 function ApplyLanguage {
     $window.Title = L "Window"
     $menuFile.Header = L "File"; $miOpen.Header = L "Open"; $miExit.Header = L "Exit"
     $menuEdit.Header = L "Edit"; $menuView.Header = L "View"; $menuTools.Header = L "Tools"; $miCurveData.Header = L "CurveData"; $miFieldAnalysis.Header = L "FieldAnalysis"; $menuHelp.Header = L "Help"
-    if($script:lang -eq 'zh'){ $miCPFEM.Header='摩擦 CPFEM 后处理（History / PEEQCP）...'; $miDataSafety.Header='数据诊断与安全恢复...' }
-    else { $miCPFEM.Header='Friction CPFEM (History / PEEQCP)...'; $miDataSafety.Header='Data Diagnosis and Safe Recovery...' }
+    $miCPFEM.Header = L "CPFEM"; $miDataSafety.Header = L "DataSafety"
 
-    $tbOpen.Content = L "OpenODB"; $tbRead.Content = L "ReadMeta"; $tbFields.Content = L "ReadFields"; $tbExport.Content = L "Export"; $tbOpenFolder.Content = L "OpenFolder"
+    $tbOpenText.Text = L "OpenODB"; $tbOpenFolderText.Text = L "OpenFolder"
     $lblLanguage.Text = L "Language"
+    $lblTheme.Text = L "Theme"
+    $cmbTheme.Items[0].Content = L "ThemeLight"
+    $cmbTheme.Items[1].Content = L "ThemeDark"
     if($script:lang -eq 'zh') {
         $cmbFramePolicy.Items[0].Content='合并／保留既有帧'
         $cmbFramePolicy.Items[1].Content='同步当前所选帧'
         $cmbFieldPolicy.Items[0].Content='合并／保留既有变量'
         $cmbFieldPolicy.Items[1].Content='同步当前变量'
-        $chkCleanupRemoved.Content='同步帧时物理删除已移除的 VTU（危险）'
+        $chkCleanupRemoved.Content='同步时删除已移除的帧'
         $lblCompatMode.Text='旧版数据兼容模式'
         $cmbCompatMode.Items[0].Content='标准增量（已有 Manifest）'
         $cmbCompatMode.Items[1].Content='快速兼容（无 Manifest，两帧抽样）'
         $cmbCompatMode.Items[2].Content='严格验证（逐帧核对数值）'
-        $chkInPlace.Content='原位增量更新已有 VTU（不新建文件夹）'
-        $txtCompatHint.Text='勾选原位更新：同目录临时写入并原子替换，保留临时回滚硬链接直至完成。'
+        $chkInPlace.Content='原位增量更新'
+        $txtCompatHint.Text='原位更新：同目录临时写入，成功后原子替换原 VTU。'
     } else {
         $cmbFramePolicy.Items[0].Content='Merge / preserve existing frames'
         $cmbFramePolicy.Items[1].Content='Sync current selection'
         $cmbFieldPolicy.Items[0].Content='Merge / preserve existing fields'
         $cmbFieldPolicy.Items[1].Content='Sync selected fields'
-        $chkCleanupRemoved.Content='Delete removed-frame VTU files (dangerous)'
+        $chkCleanupRemoved.Content='Delete removed-frame VTUs'
         $lblCompatMode.Text='Legacy compatibility mode'
         $cmbCompatMode.Items[0].Content='Standard incremental (Manifest exists)'
         $cmbCompatMode.Items[1].Content='Fast legacy (two sampled states)'
         $cmbCompatMode.Items[2].Content='Strict (verify native values per frame)'
-        $chkInPlace.Content='Update existing VTUs in place (no new data directory)'
-        $txtCompatHint.Text='In-place: write adjacent temporary files then atomically replace VTUs; rollback hardlinks are temporary.'
+        $chkInPlace.Content='In-place update'
+        $txtCompatHint.Text='In-place: temporary files are replaced atomically at the end.'
     }
+    $lblIncPolicy.Text = L "IncPolicy"
+    $txtPolicyHint.Text = L "PolicyHint"
 
-    $hdrProperties.Text = L "Properties"; $btnApply.Content = L "Apply"; $btnReset.Content = L "Reset"
+    $hdrProperties.Text = L "Properties"; $btnResetText.Text = L "Reset"
 
-    $grpSource.Header = L "Source"; $lblOdbFile.Text = L "ODBFile"; $btnRead.Content = L "ReadMeta"
-    $grpTarget.Header = L "Target"; $lblInstance.Text = L "Instance"; $lblElementSet.Text = L "ElementSet"; $lblStep.Text = L "Step"; $lblFrame.Text = L "Frame"
+    $stepLbl1.Text = L "StepSource"; $stepLbl2.Text = L "StepState"; $stepLbl3.Text = L "StepFields"; $stepLbl4.Text = L "StepOutput"; $stepLbl5.Text = L "StepExport"
 
-    $grpSeries.Header = L "Series"; $chkSeries.Content = L "EnableSeries"; $txtSeriesHint.Text = L "SeriesHint"
+    # Option tree: group captions + the seven section items (same titles as the pages).
+    $navGroupData.Content = L "NavGroupData"; $navGroupSeries.Content = L "NavGroupSeries"; $navGroupFields.Content = L "NavGroupFields"
+    $navSource.Content = L "Source"; $navTarget.Content = L "Target"; $navSeries.Content = L "Series"
+    $navFields.Content = L "Fields"; $navDerived.Content = L "Derived"; $navGND.Content = L "GND"; $navDifference.Content = L "Difference"
+
+    $hdrSource.Text = L "Source"; $lblOdbFile.Text = L "ODBFile"; $btnRead.Content = L "ReadMeta"
+    $hdrTarget.Text = L "Target"; $lblInstance.Text = L "Instance"; $lblElementSet.Text = L "ElementSet"; $lblStep.Text = L "Step"; $lblFrame.Text = L "Frame"
+    $lblTargetSel.Text = L "TargetSelection"; $lblTargetBrowse.Text = L "TargetBrowse"; $txtTargetHint.Text = L "TargetHint"
+
+    $hdrSeries.Text = L "Series"; $chkSeries.Content = L "EnableSeries"; $txtSeriesHint.Text = L "SeriesHint"
     $lblSeriesStep.Text = L "SeriesStep"; $lblAvailableFrames.Text = L "AvailableFrames"
     $btnAddFrames.Content = L "AddFrames"; $btnAddAllFrames.Content = L "AddAllFrames"
     $lblSelectedStates.Text = L "SelectedStates"; $btnRemoveStates.Content = L "RemoveStates"; $btnClearStates.Content = L "ClearStates"
 
-    $grpFields.Header = L "Fields"; $btnReadFields.Content = L "ReadFrameFields"; $btnSelectAllFields.Content = L "SelectAll"; $btnClearFields.Content = L "Clear"
-    $grpDerived.Header = L "Derived"; $chkMises.Content = L "Mises"; $chkInitialIPF.Content = L "InitialIPF"; $lblInpFile.Text = L "INPFile"; $lblIPFDir.Text = L "IPFDirection"; $txtDerivedHint.Text = L "DerivedHint"
-    $grpGND.Header = L "GND"; $chkGNDDiff.Content = L "GNDDiff"; $lblGNDDat.Text = L "GNDDat"; $lblGNDMode.Text = L "GNDMode"; $chkGNDSlideDiff.Content = L "GNDSlideDiff"; $lblGNDSlideRef.Text = L "GNDSlideRef"; $txtGNDHint.Text = L "GNDHint"
+    $hdrFields.Text = L "Fields"; $btnReadFields.Content = L "ReadFrameFields"; $btnSelectAllFields.Content = L "SelectAll"; $btnClearFields.Content = L "Clear"
+    $hdrDerived.Text = L "Derived"; $chkMises.Content = L "Mises"; $chkInitialIPF.Content = L "InitialIPF"; $lblInpFile.Text = L "INPFile"; $lblIPFDir.Text = L "IPFDirection"; $txtDerivedHint.Text = L "DerivedHint"
+    $hdrGND.Text = L "GND"; $chkGNDDiff.Content = L "GNDDiff"; $lblGNDDat.Text = L "GNDDat"; $lblGNDMode.Text = L "GNDMode"; $chkGNDSlideDiff.Content = L "GNDSlideDiff"; $lblGNDSlideRef.Text = L "GNDSlideRef"; $txtGNDHint.Text = L "GNDHint"
 
-    $grpDifference.Header = L "Difference"; $chkDelta.Content = L "EnableDiff"; $lblDiffField.Text = L "DiffField"; $lblRefStep.Text = L "RefStep"; $lblRefFrame.Text = L "RefFrame"
+    $hdrDifference.Text = L "Difference"; $chkDelta.Content = L "EnableDiff"; $lblDiffField.Text = L "DiffField"; $lblRefStep.Text = L "RefStep"; $lblRefFrame.Text = L "RefFrame"
 
     $lblBBox.Text = L "BBox"; $chkAutoOutput.Content = L "AutoOutput"; $btnChooseOutputFolder.Content = L "SelectOutputFolder"; $lblOutputFile.Text = L "OutputFile"; $hdrSummary.Text = L "Summary"; $hdrMessages.Text = L "Messages"; $btnClearMessages.Content = L "Clear"
 
@@ -1177,6 +2332,8 @@ function UpdateSummary {
     
     $s += (L "OutputFile") + " : " + $txtOutput.Text
     $txtSummary.Text = $s
+
+    Update-WizardState
 }
 
 function TryAutoMatchInp([string]$odbPath){
@@ -1263,7 +2420,8 @@ function BrowseODB {
         TryAutoMatchGNDDat $d.FileName
 
         $script:selectedStates.Clear()
-        $lstSelectedStates.Items.Clear()
+        $panelSelectedStates.Children.Clear()
+        $script:stateBoxes.Clear()
 
         Msg("Selected ODB: " + $d.FileName)
         UpdateSummary
@@ -1284,7 +2442,14 @@ function ReadMeta {
         return
     }
 
-    $global:meta = Get-Content $metaJson -Raw | ConvertFrom-Json
+    $global:meta = $null
+    try{
+        $global:meta = Get-Content $metaJson -Raw | ConvertFrom-Json
+    } catch {
+        Msg("Metadata JSON invalid: " + $_.Exception.Message)
+        [Windows.MessageBox]::Show("Metadata read failed.")
+        return
+    }
 
     $cmbInstance.Items.Clear()
     foreach($n in $global:meta.instances.PSObject.Properties.Name){
@@ -1299,23 +2464,42 @@ function ReadMeta {
         }
     }
 
-    $lstSeriesSteps.Items.Clear()
+    $panelSeriesSteps.Children.Clear()
+    $script:seriesStepBoxes.Clear()
     foreach($n in $global:meta.steps.PSObject.Properties.Name){
         $nf = [int]$global:meta.steps.$n.nframes
-        [void]$lstSeriesSteps.Items.Add($n + "  [" + $nf + " frames]")
+        $cbStep = New-Object Windows.Controls.CheckBox
+        $cbStep.Content = $n + "  [" + $nf + " frames]"
+        $cbStep.Tag = $n
+        $cbStep.Margin = "0,1,0,1"
+        $cbStep.Add_Checked({
+            if($global:meta -eq $null){ return }
+            PopulateCommonSeriesFrames
+            UpdateSummary
+        })
+        $cbStep.Add_Unchecked({
+            if($global:meta -eq $null){ return }
+            PopulateCommonSeriesFrames
+            UpdateSummary
+        })
+        [void]$panelSeriesSteps.Children.Add($cbStep)
+        $script:seriesStepBoxes.Add($cbStep)
     }
+
+    Enable-CheckListKeys "seriesSteps" $script:seriesStepBoxes
 
     if($cmbStep.Items.Count -gt 0){
         $cmbStep.SelectedIndex = 0
         $cmbRefStep.SelectedIndex = 0
     }
 
-    if($lstSeriesSteps.Items.Count -gt 0){
-        $lstSeriesSteps.SelectedIndex = 0
+    if($script:seriesStepBoxes.Count -gt 0){
+        $script:seriesStepBoxes[0].IsChecked = $true
     }
 
     $script:selectedStates.Clear()
-    $lstSelectedStates.Items.Clear()
+    $panelSelectedStates.Children.Clear()
+    $script:stateBoxes.Clear()
 
     $txtStatus.Text = "Metadata ready"
     Msg("Metadata ready.")
@@ -1335,7 +2519,8 @@ function ReadFields {
     $p = Start-Process cmd.exe -ArgumentList "/c",$cmd -Wait -PassThru
     if($p.ExitCode -ne 0 -or -not (Test-Path $fieldsJson)){ return }
 
-    $j = Get-Content $fieldsJson -Raw | ConvertFrom-Json
+    try{ $j = Get-Content $fieldsJson -Raw | ConvertFrom-Json }
+    catch { Msg("Field JSON invalid: " + $_.Exception.Message); return }
 
     $panelFields.Children.Clear()
     $script:fieldBoxes.Clear()
@@ -1361,6 +2546,9 @@ function ReadFields {
     if($cmbDeltaField.Items.Count -gt 0){
         $cmbDeltaField.SelectedIndex = 0
     }
+
+    # Shift / Ctrl range ticks; the summary is refreshed once after the range.
+    Enable-CheckListKeys "fields" $script:fieldBoxes { UpdateSummary }
 
     Msg("Fields ready: " + $j.fields.Count)
     UpdateSummary
@@ -1401,6 +2589,12 @@ function WriteSelectionFile {
 function RunExport {
     if($global:meta -eq $null){ return }
     if($cmbInstance.SelectedItem -eq $null){ return }
+    if($script:exportProc -ne $null){
+        try{ if(-not $script:exportProc.HasExited){
+            [Windows.MessageBox]::Show("An export is already running. Wait for the export console to finish.")
+            return
+        } }catch{ }
+    }
 
     $fs = SelectedFields
     if($fs.Count -eq 0 -and -not $chkDelta.IsChecked -and -not $chkMises.IsChecked -and -not $chkInitialIPF.IsChecked -and -not $chkGNDDiff.IsChecked -and -not $chkGNDSlideDiff.IsChecked){ return }
@@ -1594,7 +2788,7 @@ function RunExport {
         '@echo off'
         'title ODB2VTU-S Export - Active'
         'echo ============================================================'
-        'echo ODB2VTU-S v0.2.1 - SAFE VTU / PVD export'
+        'echo ODB2VTU-S v0.2.1-rc10 - SAFE VTU / PVD export'
         'echo ============================================================'
         'echo Status: STARTING Abaqus Python'
         'echo Large ODB files may take time to open or read field arrays.'
@@ -1623,7 +2817,7 @@ function RunExport {
     Msg("Starting export; CMD will show progress immediately.")
     Msg("Output console remains open until you close it.")
     $txtStatus.Text = "Export running - see CMD status"
-    Start-Process cmd.exe -ArgumentList "/k",(Q $runnerPath)
+    $script:exportProc = Start-Process cmd.exe -ArgumentList "/k",(Q $runnerPath) -PassThru
 }
 
 
@@ -1641,21 +2835,38 @@ function ShowFieldAnalysisWindow {
     [xml]$axaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Field Extremum Analysis"
-        Width="980" Height="720" MinWidth="820" MinHeight="600"
-        WindowStartupLocation="CenterOwner" Background="#E2E2E2"
-        FontFamily="Segoe UI" FontSize="12">
+        Title="ODB2VTU-S Workbench - Field Extremum Analysis"
+        Width="1000" Height="740" MinWidth="820" MinHeight="600"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource Bg.Window}"
+        Foreground="{DynamicResource Fg.Text}"
+        FontFamily="Segoe UI, Microsoft YaHei UI, Microsoft YaHei" FontSize="13"
+        UseLayoutRounding="True" SnapsToDevicePixels="True">
   <Window.Resources>
-    <Style TargetType="TextBox"><Setter Property="Height" Value="25"/><Setter Property="Padding" Value="4,2"/><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="#A6A6A6"/></Style>
-    <Style TargetType="ComboBox"><Setter Property="Height" Value="25"/><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="#A6A6A6"/></Style>
-    <Style TargetType="Button"><Setter Property="MinHeight" Value="25"/><Setter Property="Padding" Value="8,3"/><Setter Property="Background" Value="#E7E7E7"/><Setter Property="BorderBrush" Value="#999999"/></Style>
+$(Get-ThemeBrushXaml $script:theme)
+$themeStyles
   </Window.Resources>
   <DockPanel>
-    <Border DockPanel.Dock="Top" Background="#EBEBEB" BorderBrush="#B7B7B7" BorderThickness="0,0,0,1" Padding="6,4">
+    <Border DockPanel.Dock="Top" Background="{DynamicResource Bg.Toolbar}" BorderBrush="{DynamicResource Border.Default}" BorderThickness="0,0,0,1" Padding="12,10">
       <StackPanel Orientation="Horizontal">
-        <Button x:Name="aBtnReadFields" Content="读取可分析变量 / Read Variables"/>
-        <Button x:Name="aBtnRun" Content="运行分析 / Run Analysis" Margin="5,0,0,0" Background="#E2EEF8"/>
-        <Button x:Name="aBtnOpen" Content="打开输出目录 / Open Folder" Margin="5,0,0,0"/>
+        <Button x:Name="aBtnReadFields">
+          <StackPanel Orientation="Horizontal">
+            <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoMeta}"/>
+            <TextBlock Text="读取可分析变量 / Read Variables" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+        <Button x:Name="aBtnRun" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}">
+          <StackPanel Orientation="Horizontal">
+            <Path Style="{StaticResource ToolIconOnAccent}" Data="{StaticResource IcoRun}"/>
+            <TextBlock Text="运行分析 / Run Analysis" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+        <Button x:Name="aBtnOpen" Margin="8,0,0,0">
+          <StackPanel Orientation="Horizontal">
+            <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoFolder}"/>
+            <TextBlock Text="打开输出目录 / Open Folder" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
       </StackPanel>
     </Border>
     <Grid Margin="8">
@@ -1676,7 +2887,7 @@ function ShowFieldAnalysisWindow {
 
           <GroupBox Header="区域 / Region" Margin="0,0,0,7" Padding="8">
             <StackPanel>
-              <TextBlock Text="只分析晶粒单元；可选 Bounding Box：xmin,xmax,ymin,ymax,zmin,zmax" TextWrapping="Wrap" Foreground="#555"/>
+              <TextBlock Text="只分析晶粒单元；可选 Bounding Box：xmin,xmax,ymin,ymax,zmin,zmax" TextWrapping="Wrap" Foreground="{DynamicResource Fg.TextMuted}"/>
               <TextBox x:Name="aTxtBBox" Margin="0,5,0,0"/>
             </StackPanel>
           </GroupBox>
@@ -1723,17 +2934,17 @@ function ShowFieldAnalysisWindow {
                 <TextBox x:Name="aTxtOut"/><Button x:Name="aBtnBrowseOut" Grid.Column="1" Content="..." Margin="4,0,0,0"/>
               </Grid>
               <TextBlock Text="默认只写出 Top N 晶粒的几何体；其他晶粒不会进入该 VTU。可切换为极值范围、单个极值晶粒或全部晶粒。"
-                         Foreground="#555" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                         Foreground="{DynamicResource Fg.TextMuted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
             </StackPanel>
           </GroupBox>
         </StackPanel>
       </ScrollViewer>
 
-      <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch" Background="#B6B6B6"/>
-      <Border Grid.Column="2" Background="White" BorderBrush="#AAAAAA" BorderThickness="1">
+      <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch" Cursor="SizeWE"/>
+      <Border Grid.Column="2" Style="{StaticResource Card}">
         <DockPanel>
-          <Border DockPanel.Dock="Top" Background="#E3E3E3" BorderBrush="#AAAAAA" BorderThickness="0,0,0,1" Padding="7,4"><TextBlock Text="Analysis Log / 分析结果" FontWeight="SemiBold"/></Border>
-          <TextBox x:Name="aTxtLog" IsReadOnly="True" BorderThickness="0" Height="Auto" MinHeight="120" VerticalAlignment="Stretch" VerticalContentAlignment="Top" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" Padding="8"/>
+          <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}"><TextBlock Text="Analysis Log / 分析结果" Style="{StaticResource SectionTitle}"/></Border>
+          <TextBox x:Name="aTxtLog" IsReadOnly="True" BorderThickness="0" Height="Auto" MinHeight="120" VerticalAlignment="Stretch" VerticalContentAlignment="Top" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas, Cascadia Mono" Background="{DynamicResource Bg.Panel}" Padding="12"/>
         </DockPanel>
       </Border>
     </Grid>
@@ -1744,6 +2955,7 @@ function ShowFieldAnalysisWindow {
     $ar = New-Object System.Xml.XmlNodeReader $axaml
     $aw = [Windows.Markup.XamlReader]::Load($ar)
     $aw.Owner = $window
+    Set-AppIcon $aw
     foreach($n in @("aBtnReadFields","aBtnRun","aBtnOpen","aTxtOdb","aCmbInstance","aCmbStep","aCmbFrame","aCmbField","aTxtBBox","aTxtTopN","aCmbRank","aCmbDirection","aTxtBand","aChkExportVtu","aCmbVtuScope","aChkSplitGrains","aTxtOut","aBtnBrowseOut","aTxtLog")){
         Set-Variable -Name $n -Value $aw.FindName($n)
     }
@@ -1771,6 +2983,7 @@ function ShowFieldAnalysisWindow {
     $aCmbStep.Add_SelectionChanged({ APopulateFrames })
 
     $aBtnBrowseOut.Add_Click({
+        Ensure-WinForms
         $d=New-Object System.Windows.Forms.FolderBrowserDialog
         $d.Description="选择场变量分析输出目录"
         if(Test-Path $aTxtOut.Text){ $d.SelectedPath=$aTxtOut.Text }
@@ -1784,7 +2997,8 @@ function ShowFieldAnalysisWindow {
         $cmd="abaqus python " + (Q $fieldsPy) + " --odb " + (Q $aTxtOdb.Text) + " --step " + (Q $aCmbStep.SelectedItem.ToString()) + " --frame " + $aCmbFrame.SelectedItem.ToString() + " --json " + (Q $analysisFieldsJson)
         $p=Start-Process cmd.exe -ArgumentList "/c",$cmd -Wait -PassThru
         if($p.ExitCode -ne 0 -or -not (Test-Path $analysisFieldsJson)){ [Windows.MessageBox]::Show("Field list read failed."); return }
-        $j=Get-Content $analysisFieldsJson -Raw | ConvertFrom-Json
+        try{ $j=Get-Content $analysisFieldsJson -Raw | ConvertFrom-Json }
+        catch { [Windows.MessageBox]::Show("Field list read failed."); return }
         $aCmbField.Items.Clear(); $hasS=$false
         foreach($f in $j.fields){
             if($f.name -eq "S"){ $hasS=$true }
@@ -1825,81 +3039,72 @@ function ShowCurveDataWindow {
     [xml]$curveXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Curve Data"
-        Width="1120" Height="760"
+        Title="ODB2VTU-S Workbench - Curve Data"
+        Width="1140" Height="780"
         MinWidth="900" MinHeight="620"
         WindowStartupLocation="CenterOwner"
-        Background="#E2E2E2"
-        FontFamily="Segoe UI"
-        FontSize="12">
+        Background="{DynamicResource Bg.Window}"
+        Foreground="{DynamicResource Fg.Text}"
+        FontFamily="Segoe UI, Microsoft YaHei UI, Microsoft YaHei"
+        FontSize="13"
+        UseLayoutRounding="True" SnapsToDevicePixels="True">
 
     <Window.Resources>
-        <Style TargetType="TextBox">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#A6A6A6"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="4,2"/>
-            <Setter Property="Height" Value="25"/>
-        </Style>
-        <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#A6A6A6"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Height" Value="25"/>
-        </Style>
-        <Style TargetType="Button">
-            <Setter Property="Background" Value="#E7E7E7"/>
-            <Setter Property="BorderBrush" Value="#999999"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="8,3"/>
-            <Setter Property="MinHeight" Value="25"/>
-        </Style>
-        <Style TargetType="CheckBox">
-            <Setter Property="Margin" Value="0,2"/>
-        </Style>
-        <Style TargetType="GroupBox">
-            <Setter Property="Margin" Value="6"/>
-            <Setter Property="Padding" Value="8"/>
-            <Setter Property="BorderBrush" Value="#AAAAAA"/>
-            <Setter Property="BorderThickness" Value="1"/>
-        </Style>
+$(Get-ThemeBrushXaml $script:theme)
+$themeStyles
     </Window.Resources>
 
     <DockPanel>
         <Border DockPanel.Dock="Top"
-                Background="#E9E9E9"
-                BorderBrush="#B6B6B6"
+                Background="{DynamicResource Bg.Toolbar}"
+                BorderBrush="{DynamicResource Border.Default}"
                 BorderThickness="0,0,0,1"
-                Padding="6,4">
+                Padding="12,10">
             <StackPanel Orientation="Horizontal">
-                <Button x:Name="cBtnReadMeta" Content="Read History Metadata"/>
-                <Button x:Name="cBtnExport" Content="Export CSV" Margin="5,0,0,0" Background="#E2EEF8"/>
-                <Button x:Name="cBtnFriction" Content="Friction CSV (ALL/NORMAL/TANGENTIAL/DIAGNOSTIC)" Margin="5,0,0,0"/>
-                <Button x:Name="cBtnOpenFolder" Content="Open Output Folder" Margin="5,0,0,0"/>
+                <Button x:Name="cBtnReadMeta">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoMeta}"/>
+                        <TextBlock Text="Read History Metadata" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="cBtnExport" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIconOnAccent}" Data="{StaticResource IcoExport}"/>
+                        <TextBlock Text="Export CSV" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="cBtnFriction" Margin="8,0,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoChart}"/>
+                        <TextBlock Text="Friction CSV (ALL/NORMAL/TANGENTIAL/DIAGNOSTIC)" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="cBtnOpenFolder" Margin="8,0,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoFolder}"/>
+                        <TextBlock Text="Open Output Folder" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Border>
 
-        <StatusBar DockPanel.Dock="Bottom"
-                   Height="25"
-                   Background="#E7E7E7"
-                   BorderBrush="#B5B5B5"
-                   BorderThickness="0,1,0,0">
+        <StatusBar DockPanel.Dock="Bottom" Height="28">
             <StatusBarItem>
-                <TextBlock x:Name="cStatus" Text="Ready"/>
+                <TextBlock x:Name="cStatus" Text="Ready" Foreground="{DynamicResource Fg.TextMuted}"/>
             </StatusBarItem>
         </StatusBar>
 
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="390" MinWidth="330"/>
-                <ColumnDefinition Width="6"/>
+                <ColumnDefinition Width="8"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <ScrollViewer Grid.Column="0"
                           VerticalScrollBarVisibility="Auto"
-                          Background="#F2F2F2">
-                <StackPanel Margin="5">
+                          Background="{DynamicResource Bg.Window}">
+                <StackPanel Margin="10">
 
                     <GroupBox x:Name="cGrpSource" Header="Source">
                         <StackPanel>
@@ -1917,14 +3122,17 @@ function ShowCurveDataWindow {
 
                     <GroupBox x:Name="cGrpHistory" Header="History Selection">
                         <StackPanel>
-                            <TextBlock x:Name="cLblSteps" Text="Steps (Ctrl/Shift multi-select)"/>
-                            <ListBox x:Name="cLstSteps"
-                                     Height="145"
-                                     SelectionMode="Extended"
-                                     Background="White"
-                                     BorderBrush="#A6A6A6"
-                                     BorderThickness="1"
-                                     Margin="0,3,0,7"/>
+                            <TextBlock x:Name="cLblSteps" Text="Steps (tick one or more)"/>
+                            <Border Height="145"
+                                    Margin="0,3,0,7"
+                                    Background="{DynamicResource Bg.Inset}"
+                                    BorderBrush="{DynamicResource Border.Control}"
+                                    BorderThickness="1"
+                                    CornerRadius="6">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="cPanelSteps" Margin="8"/>
+                                </ScrollViewer>
+                            </Border>
 
                             <TextBlock x:Name="cLblRegion" Text="History Region / Section"/>
                             <ComboBox x:Name="cCmbRegion"
@@ -2032,21 +3240,20 @@ function ShowCurveDataWindow {
             </ScrollViewer>
 
             <GridSplitter Grid.Column="1"
-                          Width="6"
+                          Width="8"
                           ResizeDirection="Columns"
                           ResizeBehavior="PreviousAndNext"
-                          Cursor="SizeWE"
-                          Background="#B2B2B2"/>
+                          Cursor="SizeWE"/>
 
-            <Grid Grid.Column="2" Background="#D7D7D7">
+            <Grid Grid.Column="2" Margin="10,10,10,10">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
-                    <RowDefinition Height="6"/>
-                    <RowDefinition Height="200"/>
+                    <RowDefinition Height="8"/>
+                    <RowDefinition Height="210"/>
                 </Grid.RowDefinitions>
 
-                <GroupBox Grid.Row="0" Header="Output" Margin="6,6,6,0">
+                <GroupBox Grid.Row="0" Header="Output" Margin="0,0,0,10">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="95"/>
@@ -2078,62 +3285,48 @@ function ShowCurveDataWindow {
                     </Grid>
                 </GroupBox>
 
-                <Border Grid.Row="1"
-                        Background="White"
-                        BorderBrush="#A7A7A7"
-                        BorderThickness="1"
-                        Margin="6">
+                <Border Grid.Row="1" Style="{StaticResource Card}">
                     <DockPanel>
-                        <Border DockPanel.Dock="Top"
-                                Background="#E3E3E3"
-                                BorderBrush="#A7A7A7"
-                                BorderThickness="0,0,0,1"
-                                Padding="7,4">
-                            <TextBlock x:Name="cHdrSummary" Text="Curve Summary" FontWeight="SemiBold"/>
+                        <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
+                            <TextBlock x:Name="cHdrSummary" Text="Curve Summary" Style="{StaticResource SectionTitle}"/>
                         </Border>
                         <TextBox x:Name="cTxtSummary"
                                  Height="Auto"
                                  VerticalAlignment="Stretch"
+                                 VerticalContentAlignment="Top"
                                  IsReadOnly="True"
                                  BorderThickness="0"
-                                 Background="White"
+                                 Background="{DynamicResource Bg.Panel}"
                                  AcceptsReturn="True"
                                  TextWrapping="Wrap"
                                  VerticalScrollBarVisibility="Auto"
-                                 FontFamily="Consolas"
-                                 FontSize="12"
-                                 Padding="8"/>
+                                 FontFamily="Consolas, Cascadia Mono"
+                                 FontSize="12.5"
+                                 Padding="12"/>
                     </DockPanel>
                 </Border>
 
-                <GridSplitter Grid.Row="2" Height="6" Background="#B2B2B2"/>
+                <GridSplitter Grid.Row="2" Height="8" HorizontalAlignment="Stretch" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Cursor="SizeNS"/>
 
-                <Border Grid.Row="3"
-                        Background="White"
-                        BorderBrush="#A7A7A7"
-                        BorderThickness="1"
-                        Margin="6,0,6,6">
+                <Border Grid.Row="3" Style="{StaticResource Card}">
                     <DockPanel>
-                        <Border DockPanel.Dock="Top"
-                                Background="#E3E3E3"
-                                BorderBrush="#A7A7A7"
-                                BorderThickness="0,0,0,1"
-                                Padding="7,4">
-                            <TextBlock x:Name="cHdrMessages" Text="Messages" FontWeight="SemiBold"/>
+                        <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
+                            <TextBlock x:Name="cHdrMessages" Text="Messages" Style="{StaticResource SectionTitle}"/>
                         </Border>
                         <TextBox x:Name="cTxtMessages"
                                  Height="Auto"
                                  VerticalAlignment="Stretch"
+                                 VerticalContentAlignment="Top"
                                  IsReadOnly="True"
                                  BorderThickness="0"
-                                 Background="White"
+                                 Background="{DynamicResource Bg.Panel}"
                                  AcceptsReturn="True"
                                  TextWrapping="NoWrap"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto"
-                                 FontFamily="Consolas"
-                                 FontSize="11"
-                                 Padding="7"/>
+                                 FontFamily="Consolas, Cascadia Mono"
+                                 FontSize="12"
+                                 Padding="12"/>
                     </DockPanel>
                 </Border>
             </Grid>
@@ -2145,11 +3338,12 @@ function ShowCurveDataWindow {
     $curveReader = New-Object System.Xml.XmlNodeReader $curveXaml
     $cw = [Windows.Markup.XamlReader]::Load($curveReader)
     $cw.Owner = $window
+    Set-AppIcon $cw
 
     $cnames = @(
         "cBtnReadMeta","cBtnExport","cBtnFriction","cBtnOpenFolder","cStatus",
         "cGrpSource","cLblOdb","cTxtOdb","cBtnBrowseOdb",
-        "cGrpHistory","cLblSteps","cLstSteps","cLblRegion","cCmbRegion","cLblRegionFilter","cTxtRegionFilter","cLblNodeLocator","cLblNodeLabel","cTxtNodeLabel","cBtnFindNode","cLblPreset","cCmbPreset",
+        "cGrpHistory","cLblSteps","cPanelSteps","cLblRegion","cCmbRegion","cLblRegionFilter","cTxtRegionFilter","cLblNodeLocator","cLblNodeLabel","cTxtNodeLabel","cBtnFindNode","cLblPreset","cCmbPreset",
         "cGrpXY","cLblX","cCmbX","cLblY","cCmbY","cChkAbsX","cChkAbsY",
         "cGrpTransform","cTxtXScale","cTxtXOffset","cTxtYScale","cTxtYOffset","cChkDedupe",
         "cChkAutoOutput","cBtnChooseOutputFolder","cLblOutput","cTxtOutput","cBtnBrowseOutput",
@@ -2161,11 +3355,13 @@ function ShowCurveDataWindow {
     }
 
     $script:curveMetaV175 = $null
+    # Step list uses checkboxes so multi-selection needs no Ctrl/Shift (same as
+    # the main window's time-series panel).
+    $curveStepBoxes = New-Object System.Collections.Generic.List[object]
     $COF = "COF=|RF1|/|CF2|"
 
     function CMsg([string]$s){
-        $cTxtMessages.AppendText("["+(Get-Date -Format "HH:mm:ss")+"] "+$s+"`r`n")
-        $cTxtMessages.ScrollToEnd()
+        Write-LogBox $cTxtMessages $s
     }
 
     function Get-JsonPropertyValue($obj,[string]$name){
@@ -2188,8 +3384,8 @@ function ShowCurveDataWindow {
 
     function SelectedCurveSteps {
         $r = New-Object System.Collections.Generic.List[string]
-        foreach($item in $cLstSteps.SelectedItems){
-            $r.Add($item.ToString())
+        foreach($cb in $curveStepBoxes){
+            if($cb.IsChecked){ $r.Add($cb.Tag.ToString()) }
         }
         return $r
     }
@@ -2537,6 +3733,7 @@ function ShowCurveDataWindow {
     }
 
     function Choose-CurveOutputFolder {
+        Ensure-WinForms
         $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
         $dlg.Description = "选择曲线输出文件夹 / Select curve output folder"
 
@@ -2572,17 +3769,27 @@ function ShowCurveDataWindow {
             return
         }
 
-        $script:curveMetaV175 = Get-Content $curveMetaJson -Raw | ConvertFrom-Json
+        try{ $script:curveMetaV175 = Get-Content $curveMetaJson -Raw | ConvertFrom-Json }
+        catch { $cStatus.Text = "History metadata failed"; CMsg("Curve metadata JSON invalid: " + $_.Exception.Message); return }
 
-        $cLstSteps.Items.Clear()
+        $cPanelSteps.Children.Clear()
+        $curveStepBoxes.Clear()
         foreach($s in $script:curveMetaV175.steps.PSObject.Properties.Name){
-            [void]$cLstSteps.Items.Add($s)
+            $cbSt = New-Object Windows.Controls.CheckBox
+            $cbSt.Content = $s
+            $cbSt.Tag = $s
+            $cbSt.Margin = "0,1,0,1"
+            $cbSt.Add_Checked({ RefreshCommonRegions; UpdateCurveSummary })
+            $cbSt.Add_Unchecked({ RefreshCommonRegions; UpdateCurveSummary })
+            [void]$cPanelSteps.Children.Add($cbSt)
+            $curveStepBoxes.Add($cbSt)
         }
 
-        if($cLstSteps.Items.Count -gt 0){
-            $cLstSteps.SelectedIndex = 0
-            RefreshCommonRegions
+        if($curveStepBoxes.Count -gt 0){
+            $curveStepBoxes[0].IsChecked = $true
         }
+
+        Enable-CheckListKeys "curveSteps" $curveStepBoxes
 
         $stem = [IO.Path]::GetFileNameWithoutExtension($cTxtOdb.Text)
         if([string]::IsNullOrWhiteSpace($cTxtOutput.Text)){
@@ -2591,8 +3798,8 @@ function ShowCurveDataWindow {
 
         $cStatus.Text = "History metadata ready"
         CMsg("History metadata ready.")
-        CMsg("History Regions for current Step selection: " + $script:allCommonRegions.Count)
-        CMsg("Select one or more Steps. Then choose a History Region / Section.")
+        CMsg("History Regions common to the ticked Steps: " + $script:allCommonRegions.Count)
+        CMsg("Tick one or more Steps, then choose a History Region / Section.")
         CMsg("Node search is optional and only locates an existing History Region; it does not replace Region / Section selection.")
         UpdateCurveSummary
     }
@@ -2655,7 +3862,7 @@ function ShowCurveDataWindow {
 
     # Minimal bilingual labels, based on current main language.
     if($script:lang -eq "zh"){
-        $cw.Title = "曲线数据"
+        $cw.Title = Get-AppTitle "曲线数据"
         $cBtnReadMeta.Content = "读取 History 元数据"
         $cBtnExport.Content = "导出 CSV"
         $cBtnFriction.Content = "导出摩擦专用 CSV（四类文件）"
@@ -2663,7 +3870,7 @@ function ShowCurveDataWindow {
         $cGrpSource.Header = "数据源"
         $cLblOdb.Text = "ODB 文件"
         $cGrpHistory.Header = "History 选择"
-        $cLblSteps.Text = "分析步（Ctrl/Shift 多选）"
+        $cLblSteps.Text = "分析步（可多选）"
         $cLblRegion.Text = "History 区域 / Section"
         $cLblRegionFilter.Text = "区域筛选"
         $cLblNodeLocator.Text = "节点定位（可选）"
@@ -2741,11 +3948,6 @@ function ShowCurveDataWindow {
         }
     })
 
-    $cLstSteps.Add_SelectionChanged({
-        RefreshCommonRegions
-        UpdateCurveSummary
-    })
-
     $cCmbRegion.Add_SelectionChanged({
         RefreshCommonVariables
         UpdateCurveSummary
@@ -2785,6 +3987,31 @@ $cmbLanguage.Add_SelectionChanged({
     ApplyLanguage
 })
 
+$cmbTheme.SelectedIndex = $(if($script:theme -eq 'dark'){1}else{0})
+$cmbTheme.Add_SelectionChanged({
+    if($cmbTheme.SelectedItem -eq $null){ return }
+    $t = $cmbTheme.SelectedItem.Tag.ToString()
+    if($t -eq $script:theme){ return }
+    $prev = $script:theme
+    $script:theme = $t
+    try{
+        Apply-ThemeColors
+    }catch{
+        # Never let a styling problem kill the window: fall back to the last good theme.
+        $script:theme = $prev
+        try{ Apply-ThemeColors }catch{}
+        Msg ("Theme switch failed, reverted: " + $_.Exception.Message)
+    }
+})
+
+# Option tree: selecting a tree item shows that section's options on the right.
+$navList.Add_SelectionChanged({
+    $item = $navList.SelectedItem
+    if($item -eq $null -or $item.Tag -eq $null){ return }
+    Show-NavPage $item.Tag.ToString()
+})
+$navList.SelectedIndex = 1
+
 $miOpen.Add_Click({ BrowseODB })
 $miExit.Add_Click({ $window.Close() })
 $miCurveData.Add_Click({ ShowCurveDataWindow })
@@ -2797,7 +4024,7 @@ $miCPFEM.Add_Click({
 $miDataSafety.Add_Click({
     $script = Join-Path $scriptDir 'odb_gui_recovery.ps1'
     if(-not (Test-Path -LiteralPath $script)) { [Windows.MessageBox]::Show('Data safety module missing.'); return }
-    . $script
+    if(-not (Get-Command Show-DataSafetyWorkspace -ErrorAction SilentlyContinue)){ . $script }
     $pvd = if($txtOutput.Text -and $txtOutput.Text.EndsWith('.pvd',[StringComparison]::OrdinalIgnoreCase)){$txtOutput.Text}else{''}
     Show-DataSafetyWorkspace $pvd $script:lang
 })
@@ -2805,14 +4032,16 @@ $miDataSafety.Add_Click({
 $tbOpen.Add_Click({ BrowseODB })
 $btnBrowse.Add_Click({ BrowseODB })
 
-$tbRead.Add_Click({ ReadMeta })
 $btnRead.Add_Click({ ReadMeta })
 
-$tbFields.Add_Click({ ReadFields })
 $btnReadFields.Add_Click({ ReadFields })
 
-$tbExport.Add_Click({ RunExport })
-$btnApply.Add_Click({ RunExport })
+# Guided rail: the call-to-action runs, or focuses, whatever the current step needs.
+# Export is reachable only from that button (and only at step 5), so the workflow
+# order cannot be bypassed.
+$btnNextStep.Add_Click({
+    if($script:wizardAction -ne $null){ & $script:wizardAction }
+})
 
 $btnBrowseInp.Add_Click({ BrowseInp })
 $chkMises.Add_Click({ UpdateSummary })
@@ -2899,9 +4128,9 @@ $btnReset.Add_Click({
     $script:selectedStates.Clear()
     RefreshSelectedStates
 
-    if($lstSeriesSteps.Items.Count -gt 0){
-        $lstSeriesSteps.UnselectAll()
-        $lstSeriesSteps.SelectedIndex = 0
+    foreach($cb in $script:seriesStepBoxes){ $cb.IsChecked = $false }
+    if($script:seriesStepBoxes.Count -gt 0){
+        $script:seriesStepBoxes[0].IsChecked = $true
         PopulateCommonSeriesFrames
     }
 
@@ -2925,12 +4154,6 @@ $cmbStep.Add_SelectionChanged({
     UpdateSummary
 })
 
-$lstSeriesSteps.Add_SelectionChanged({
-    if($global:meta -eq $null){ return }
-    PopulateCommonSeriesFrames
-    UpdateSummary
-})
-
 $cmbRefStep.Add_SelectionChanged({
     if($global:meta -eq $null -or $cmbRefStep.SelectedItem -eq $null){ return }
     PopulateFrameCombo $cmbRefFrame $cmbRefStep.SelectedItem.ToString() $false
@@ -2948,7 +4171,7 @@ $txtOutput.Add_TextChanged({ UpdateSummary })
 $cmbFramePolicy.Add_SelectionChanged({ UpdateSummary })
 $cmbFieldPolicy.Add_SelectionChanged({ UpdateSummary })
 $chkCleanupRemoved.Add_Click({ UpdateSummary })
-$txtOdb.Add_TextChanged({ $txtOdb.ToolTip = $txtOdb.Text })
+$txtOdb.Add_TextChanged({ $txtOdb.ToolTip = $txtOdb.Text; Update-WizardState })
 
 $panelSeries.IsEnabled = $false
 $cmbIPFDir.SelectedIndex = 2

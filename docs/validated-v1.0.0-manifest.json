@@ -1,0 +1,197 @@
+{
+  "release": "v1.0.0",
+  "baseline_exe_filename": "odb2vtu.exe",
+  "sha256": "bab33ff40ee8a7201628367f9b020b5736fbe880c703ca24f277fe1c55236c98",
+  "size_bytes": 507904,
+  "extracted_resource_count": 31,
+  "resources": [
+    {
+      "name": "AppInfo.json",
+      "repo_path": "src/data_exporter/windows/AppInfo.json",
+      "sha256": "38d4db868d3744578b56f6ca099258985f783a59822b809a1a3f99ec9d75307a",
+      "size_bytes": 1283
+    },
+    {
+      "name": "Audit_ReadOnly.ps1",
+      "repo_path": "src/data_exporter/windows/Audit_ReadOnly.ps1",
+      "sha256": "47ac9887e59a5b7292313c61e23cd34bd29f778cf8a8ef683c882a41861692bd",
+      "size_bytes": 12322
+    },
+    {
+      "name": "Check_Environment.ps1",
+      "repo_path": "src/data_exporter/windows/Check_Environment.ps1",
+      "sha256": "1110300595b7cf2db4a925222d9eb4a28806dd6b1c39d03e0069529b08a889c2",
+      "size_bytes": 923
+    },
+    {
+      "name": "Check_PS51_Syntax.ps1",
+      "repo_path": "src/data_exporter/windows/Check_PS51_Syntax.ps1",
+      "sha256": "6320f2611305a636174c26e49c9998d3f18bd5c79ae3fdfb0449bd320114c6b3",
+      "size_bytes": 1353
+    },
+    {
+      "name": "Launch_ODB2VTU-S_Exporter.vbs",
+      "repo_path": "src/data_exporter/windows/Launch_ODB2VTU-S_Exporter.vbs",
+      "sha256": "60b736349a47d11223953a7f7ecfac1f89a9554be0d33f6aaa28e163de4806d6",
+      "size_bytes": 620
+    },
+    {
+      "name": "Launch_ODB2VTU-S_Exporter_Debug.cmd",
+      "repo_path": "src/data_exporter/windows/Launch_ODB2VTU-S_Exporter_Debug.cmd",
+      "sha256": "bcb7f16d2a3bf1bce831b0c5a90353601ba290489ed689694082259989bdd014",
+      "size_bytes": 1037
+    },
+    {
+      "name": "Launch_Workbench.ps1",
+      "repo_path": "src/data_exporter/windows/Launch_Workbench.ps1",
+      "sha256": "a9dc3b85c75adfb0c04acd146b7b827522b12ee68c008e125fcd8c6698febaf8",
+      "size_bytes": 1909
+    },
+    {
+      "name": "ODB2VTU-S_Exporter.ps1",
+      "repo_path": "src/data_exporter/windows/ODB2VTU-S_Exporter.ps1",
+      "sha256": "de1a6d66daa7eb342c9957b98ecb70e6d874389b6a75fe0ebb75d5fd0d8067a2",
+      "size_bytes": 203051
+    },
+    {
+      "name": "Restore_Interrupted_InPlace_Windows.cmd",
+      "repo_path": "src/data_exporter/windows/Restore_Interrupted_InPlace_Windows.cmd",
+      "sha256": "605a24b4b30fd1f4a6079ecf0059ed2241fdf8c4116509c9712cb864c19211fe",
+      "size_bytes": 875
+    },
+    {
+      "name": "abaqus_postprocess_master.py",
+      "repo_path": "src/postprocess/backend/abaqus_postprocess_master.py",
+      "sha256": "be0283379fbb48adb8713a5765619b95050eb217730f9587708376a562ae39e3",
+      "size_bytes": 37818
+    },
+    {
+      "name": "cpfem_integrated.ps1",
+      "repo_path": "src/data_exporter/windows/cpfem_integrated.ps1",
+      "sha256": "cd7b511af12d3b67c4df4bda9c82247594729f628e41bbfaa5bf1fdaa15cf208",
+      "size_bytes": 10421
+    },
+    {
+      "name": "odb_curve_history_export.py",
+      "repo_path": "src/data_exporter/backend/odb_curve_history_export.py",
+      "sha256": "e9fd3678e7fd5b6f1c64bc49ae1bb4ea00d47117c78fcadd8cbe8ebcebceb020",
+      "size_bytes": 6390
+    },
+    {
+      "name": "odb_curve_history_meta.py",
+      "repo_path": "src/data_exporter/backend/odb_curve_history_meta.py",
+      "sha256": "b790122deca59bbecedaecafb88f4c72ffae69ddce0d885e43b55afbed77b812",
+      "size_bytes": 2239
+    },
+    {
+      "name": "odb_export_inventory.py",
+      "repo_path": "src/data_exporter/backend/odb_export_inventory.py",
+      "sha256": "68d1bcd931a879db6881bbe2946f974c7e2eb28380ceb09762b1121591edf40e",
+      "size_bytes": 7262
+    },
+    {
+      "name": "odb_export_legacy.py",
+      "repo_path": "src/data_exporter/backend/odb_export_legacy.py",
+      "sha256": "343db000759c4fd404270fcc1851da4b512f8c783f5f765c60f82be63546e7d8",
+      "size_bytes": 6734
+    },
+    {
+      "name": "odb_export_series.py",
+      "repo_path": "src/data_exporter/backend/odb_export_series.py",
+      "sha256": "40d23f2b5f874881c816a13bc434c9665297b1e294349ff809301eedeabc1627",
+      "size_bytes": 38011
+    },
+    {
+      "name": "odb_export_state.py",
+      "repo_path": "src/data_exporter/backend/odb_export_state.py",
+      "sha256": "aa943ffed78cedf9f13bffe069d46ad016f98cfb6f13af9c7587cdc14b5badfd",
+      "size_bytes": 5341
+    },
+    {
+      "name": "odb_export_vtu.py",
+      "repo_path": "src/data_exporter/backend/odb_export_vtu.py",
+      "sha256": "8fdb3ad51efca32250302b535f4270150fe6fe3fe1e6f7e8773a0680f74dd7d1",
+      "size_bytes": 42318
+    },
+    {
+      "name": "odb_field_analysis.py",
+      "repo_path": "src/data_exporter/backend/odb_field_analysis.py",
+      "sha256": "c698ba38b82576e9fd2abb2dda34a30ed3b8fa206cd0bacc435889c8169245e7",
+      "size_bytes": 16569
+    },
+    {
+      "name": "odb_gui_recovery.ps1",
+      "repo_path": "src/data_exporter/windows/odb_gui_recovery.ps1",
+      "sha256": "17b22d06c98a570d5c78860770f7fc69dc000d2fc183b4a5a27efb187168bf70",
+      "size_bytes": 13304
+    },
+    {
+      "name": "odb_inplace_transaction.py",
+      "repo_path": "src/data_exporter/backend/odb_inplace_transaction.py",
+      "sha256": "2bcb9635a7d2cd0e814c22d92ac81286df9efab7406b73844d96856ac5ee55da",
+      "size_bytes": 5340
+    },
+    {
+      "name": "odb_legacy_baseline.py",
+      "repo_path": "src/data_exporter/backend/odb_legacy_baseline.py",
+      "sha256": "724f61e6c50ee1b91367ae5cf983792c3040f6fd6ce0acdbddb1acc3e6aa22ff",
+      "size_bytes": 9725
+    },
+    {
+      "name": "odb_legacy_inplace.py",
+      "repo_path": "src/data_exporter/backend/odb_legacy_inplace.py",
+      "sha256": "9eaadf13d55a1f0647cc2015be3237a53abe6570d47d463c255a78829ba13cbe",
+      "size_bytes": 4774
+    },
+    {
+      "name": "odb_legacy_migration.py",
+      "repo_path": "src/data_exporter/backend/odb_legacy_migration.py",
+      "sha256": "7056d4bb27f6547b49bccb6bdd87fb0d052542768779d305f89a25b9d6ad86bb",
+      "size_bytes": 10288
+    },
+    {
+      "name": "odb_list_fields.py",
+      "repo_path": "src/data_exporter/backend/odb_list_fields.py",
+      "sha256": "8f889aa09a16a0e68dad02452a4966a141bb3af9502164666a7b5ad2b0e52783",
+      "size_bytes": 2119
+    },
+    {
+      "name": "odb_manifest_adoption.py",
+      "repo_path": "src/data_exporter/backend/odb_manifest_adoption.py",
+      "sha256": "bc09ba33d3a768cc2f5f9241b479abcfdcf86d513ccb4cba7529969b4b9cc708",
+      "size_bytes": 4025
+    },
+    {
+      "name": "odb_metadata.py",
+      "repo_path": "src/data_exporter/backend/odb_metadata.py",
+      "sha256": "e2d0307fa4d7451cf963381fb43f6a8bed3896b58ed6f697c632b951bb3f5635",
+      "size_bytes": 1803
+    },
+    {
+      "name": "odb_recovery_safe.py",
+      "repo_path": "src/data_exporter/backend/odb_recovery_safe.py",
+      "sha256": "7ce52eff8b845c6eef7d4c4551db169b2129e6c8d5fcdcc6031ae8645055e671",
+      "size_bytes": 19559
+    },
+    {
+      "name": "odb_vtu_incremental.py",
+      "repo_path": "src/data_exporter/backend/odb_vtu_incremental.py",
+      "sha256": "d5af4fc07040f49b17188e7755d6d3f78402c5080bfc1a98ef24b5dcea1a3b75",
+      "size_bytes": 11719
+    },
+    {
+      "name": "icons/odb2vtu-s-exporter.ico",
+      "repo_path": "assets/icons/odb2vtu-s-exporter.ico",
+      "sha256": "39f52907e954307da53bb3c25dae9cb49219f5e2c3995d4c9d781bd535693bf6",
+      "size_bytes": 6432
+    },
+    {
+      "name": "icons/odb2vtu-s-exporter.png",
+      "repo_path": "assets/icons/odb2vtu-s-exporter.png",
+      "sha256": "1bce724fe4371f70d9c5fd1fa8587096421dda055c64cc543857a9e4059435d8",
+      "size_bytes": 6410
+    }
+  ],
+  "verified_against_user_exe": true,
+  "linux_baseline_exe_tested": false
+}

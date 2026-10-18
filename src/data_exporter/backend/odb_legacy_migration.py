@@ -9,8 +9,6 @@ the sampled mesh, without loading all historical field values.
 """
 from __future__ import print_function
 import argparse
-import hashlib
-import json
 import os
 import shutil
 import sys
@@ -126,8 +124,6 @@ def run(a):
         print('[TARGET] %s' % target_pvd)
         if a.mode == 'check':
             return 0
-        if a.mode not in ('migrate', 'fast', 'strict'):
-            raise RuntimeError('Unknown migration mode: ' + a.mode)
         needed = sum(s for _,_,s,_ in inspected) + os.path.getsize(source_pvd) + 20000000
         space = shutil.disk_usage(os.path.dirname(source_pvd)).free
         if needed > space:

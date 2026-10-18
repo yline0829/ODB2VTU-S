@@ -4,7 +4,6 @@ from __future__ import print_function
 import hashlib
 import json
 import os
-import re
 
 
 MANIFEST_VERSION = 2
@@ -175,25 +174,6 @@ def atomic_write_json(path, data):
 
 def same_source_identity(manifest, source):
     return dict((manifest or {}).get("source") or {}) == dict(source or {})
-
-
-def parse_vtu_field_names(path):
-    if not path or not os.path.exists(path):
-        return []
-    rx = re.compile(r'<DataArray\b[^>]*\bName="([^"]+)"')
-    names = []
-    seen = set()
-    with open(path, "r", errors="ignore") as f:
-        for line in f:
-            if "<DataArray" not in line or "Name=" not in line:
-                continue
-            m = rx.search(line)
-            if m:
-                name = m.group(1)
-                if name not in seen:
-                    seen.add(name)
-                    names.append(name)
-    return names
 
 
 def atomic_replace(src, dst):

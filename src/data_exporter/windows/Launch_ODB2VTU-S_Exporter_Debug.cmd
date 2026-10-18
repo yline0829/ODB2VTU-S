@@ -2,7 +2,7 @@
 setlocal
 title ODB2VTU-S Workbench - Debug Launcher
 echo ============================================================
-echo ODB2VTU-S v0.2.1 - Unified Workbench Debug Launcher
+echo ODB2VTU-S v0.2.1-rc10 - Unified Workbench Debug Launcher
 echo ============================================================
 echo Status: STARTING GUI via PowerShell...
 echo If the GUI takes time to appear, leave this window open.

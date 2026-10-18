@@ -8,11 +8,9 @@ nonempty, finite, native result array (verified numerically).
 from __future__ import print_function
 import os
 import re
-import mmap
 import xml.etree.ElementTree as ET
 
 from odb_export_inventory import _is_closed_vtu, scan_vtu_directory
-from odb_export_state import state_key
 from odb_vtu_incremental import _arrays, _compare_geometry, _mapping, _count_elements
 
 FIELD_PREFERENCE = ('S', 'LE', 'U', 'RF', 'PEEQ', 'PEEQCP', 'SDV29', 'SDV78')
@@ -33,11 +31,9 @@ def collect_pvd_states(pvd, step_names, frame_count):
     data = list(root.iter('DataSet'))
     if not data:
         raise RuntimeError('PVD contains no DataSet entries.')
-    index, _, _, issues = scan_vtu_directory(frame_dir, stem, step_names,
-                                               frame_count, pvd, {})
-    if any('Cannot uniquely associate' in e for e in issues):
-        # Unindexed extras do not matter; indexed files must still map below.
-        pass
+    # Unindexed extras do not matter; indexed files must still map below.
+    index = scan_vtu_directory(frame_dir, stem, step_names,
+                               frame_count, pvd, {})[0]
     lookup = {}
     for key, fn in index.items():
         if fn in lookup:

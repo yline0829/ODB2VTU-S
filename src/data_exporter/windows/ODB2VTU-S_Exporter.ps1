@@ -39,52 +39,60 @@ $script:theme = 'light'
 
 $script:themeColors = @{
     light = @{
-        'Bg.Window'         = '#EDF0F4'
+        'Bg.Window'         = '#F4F5F7'
         'Bg.Panel'          = '#FFFFFF'
-        'Bg.Header'         = '#F4F6F9'
+        'Bg.Sidebar'        = '#F7F7F8'
+        'Bg.SidebarSel'     = '#E8F1EF'
+        'Bg.Header'         = '#FFFFFF'
         'Bg.Toolbar'        = '#FFFFFF'
         'Bg.Menu'           = '#FFFFFF'
-        'Bg.Status'         = '#F4F6F9'
+        'Bg.Status'         = '#FFFFFF'
         'Bg.Control'        = '#FFFFFF'
-        'Bg.ControlHover'   = '#F2F6FB'
-        'Bg.Selection'      = '#D7E6F8'
-        'Bg.SelectionHover' = '#EAF3FC'
-        'Bg.Inset'          = '#FAFBFD'
-        'Border.Default'    = '#DFE4EA'
-        'Border.Strong'     = '#C6CED8'
-        'Border.Control'    = '#C9D1DA'
-        'Fg.Text'           = '#1E2733'
-        'Fg.TextMuted'      = '#5A6673'
-        'Fg.TextDim'        = '#8B95A1'
+        'Bg.ControlHover'   = '#F5F6F8'
+        'Bg.Selection'      = '#E8F1EF'
+        'Bg.SelectionHover' = '#F1F8F6'
+        'Bg.Inset'          = '#F7F7F8'
+        'Border.Default'    = '#E4E5E9'
+        'Border.Sidebar'    = '#E4E5E9'
+        'Border.Strong'     = '#D2D5DB'
+        'Border.Control'    = '#DCDEE3'
+        'Fg.Text'           = '#14161A'
+        'Fg.TextMuted'      = '#6B7280'
+        'Fg.TextDim'        = '#9AA1AB'
         'Fg.OnAccent'       = '#FFFFFF'
-        'Accent'            = '#2F6FD0'
-        'AccentHover'       = '#3B80E2'
-        'AccentPressed'     = '#255CB0'
-        'Splitter'          = '#DCE2E9'
+        'Accent'            = '#0F6B5C'
+        'AccentHover'       = '#0B5749'
+        'AccentPressed'     = '#09453A'
+        'AccentSoft'        = '#E8F1EF'
+        'Splitter'          = '#E4E5E9'
     }
     dark = @{
-        'Bg.Window'         = '#1B1D21'
-        'Bg.Panel'          = '#23262B'
-        'Bg.Header'         = '#2A2E34'
-        'Bg.Toolbar'        = '#23262B'
-        'Bg.Menu'           = '#23262B'
-        'Bg.Status'         = '#1F2226'
-        'Bg.Control'        = '#2B2F35'
-        'Bg.ControlHover'   = '#343A42'
-        'Bg.Selection'      = '#2F4E77'
-        'Bg.SelectionHover' = '#35475E'
-        'Bg.Inset'          = '#1F2226'
-        'Border.Default'    = '#34383F'
-        'Border.Strong'     = '#454B54'
-        'Border.Control'    = '#3D434B'
-        'Fg.Text'           = '#E7EAEE'
-        'Fg.TextMuted'      = '#A6AFBA'
-        'Fg.TextDim'        = '#7D8792'
+        'Bg.Window'         = '#141619'
+        'Bg.Panel'          = '#1C1F23'
+        'Bg.Sidebar'        = '#181A1D'
+        'Bg.SidebarSel'     = '#1F3B35'
+        'Bg.Header'         = '#1C1F23'
+        'Bg.Toolbar'        = '#1C1F23'
+        'Bg.Menu'           = '#1C1F23'
+        'Bg.Status'         = '#1A1C1F'
+        'Bg.Control'        = '#23272C'
+        'Bg.ControlHover'   = '#2B3136'
+        'Bg.Selection'      = '#1F3B35'
+        'Bg.SelectionHover' = '#24443D'
+        'Bg.Inset'          = '#181A1D'
+        'Border.Default'    = '#2C3036'
+        'Border.Sidebar'    = '#2C3036'
+        'Border.Strong'     = '#3B4148'
+        'Border.Control'    = '#353B42'
+        'Fg.Text'           = '#E9EBEE'
+        'Fg.TextMuted'      = '#A2A9B2'
+        'Fg.TextDim'        = '#787F89'
         'Fg.OnAccent'       = '#FFFFFF'
-        'Accent'            = '#4A86E8'
-        'AccentHover'       = '#5D94EC'
-        'AccentPressed'     = '#3A70C8'
-        'Splitter'          = '#34383F'
+        'Accent'            = '#35A18A'
+        'AccentHover'       = '#43B49B'
+        'AccentPressed'     = '#2A8672'
+        'AccentSoft'        = '#1F3B35'
+        'Splitter'          = '#2C3036'
     }
 }
 
@@ -496,8 +504,8 @@ $themeStyles = @'
 <ControlTemplate x:Key="GroupBoxTemplate" TargetType="GroupBox">
     <Border Background="{DynamicResource Bg.Panel}" BorderBrush="{DynamicResource Border.Default}" BorderThickness="1" CornerRadius="6">
         <DockPanel>
-            <Border DockPanel.Dock="Top" Background="{DynamicResource Bg.Header}" CornerRadius="6,6,0,0" Padding="12,9">
-                <TextBlock Text="{TemplateBinding Header}" FontWeight="SemiBold" Foreground="{DynamicResource Fg.Text}"/>
+            <Border DockPanel.Dock="Top" Background="{DynamicResource Bg.Panel}" BorderBrush="{DynamicResource Border.Default}" BorderThickness="0,0,0,1" CornerRadius="5,5,0,0" Padding="14,9">
+                <TextBlock Text="{TemplateBinding Header}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg.Text}"/>
             </Border>
             <ContentPresenter Margin="{TemplateBinding Padding}"/>
         </DockPanel>
@@ -662,29 +670,32 @@ $themeStyles = @'
     <Setter Property="Background" Value="{DynamicResource Bg.Panel}"/>
     <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
     <Setter Property="BorderThickness" Value="1"/>
-    <Setter Property="CornerRadius" Value="8"/>
+    <Setter Property="CornerRadius" Value="6"/>
     <Setter Property="SnapsToDevicePixels" Value="True"/>
 </Style>
 
 <Style x:Key="CardHeader" TargetType="Border">
-    <Setter Property="Background" Value="{DynamicResource Bg.Header}"/>
+    <Setter Property="Background" Value="{DynamicResource Bg.Panel}"/>
     <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
     <Setter Property="BorderThickness" Value="0,0,0,1"/>
-    <Setter Property="CornerRadius" Value="7,7,0,0"/>
-    <Setter Property="Padding" Value="12,9"/>
+    <Setter Property="CornerRadius" Value="5,5,0,0"/>
+    <Setter Property="Padding" Value="14,10"/>
 </Style>
 
 <Style x:Key="SectionTitle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="13"/>
     <Setter Property="FontWeight" Value="SemiBold"/>
     <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
 </Style>
 
 <Style x:Key="FieldLabel" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12"/>
     <Setter Property="Foreground" Value="{DynamicResource Fg.TextMuted}"/>
     <Setter Property="VerticalAlignment" Value="Center"/>
 </Style>
 
 <Style x:Key="HintText" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="11.5"/>
     <Setter Property="Foreground" Value="{DynamicResource Fg.TextMuted}"/>
     <Setter Property="TextWrapping" Value="Wrap"/>
     <Setter Property="Margin" Value="0,6,0,0"/>
@@ -694,6 +705,113 @@ $themeStyles = @'
     <Setter Property="Width" Value="1"/>
     <Setter Property="Background" Value="{DynamicResource Border.Default}"/>
     <Setter Property="Margin" Value="11,5"/>
+</Style>
+
+<!-- ===== sidebar / page header (reference layout) ===== -->
+<Style x:Key="Sidebar" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource Bg.Sidebar}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Sidebar}"/>
+    <Setter Property="BorderThickness" Value="0,0,1,0"/>
+</Style>
+
+<Style x:Key="BrandMark" TargetType="Border">
+    <Setter Property="Width" Value="30"/>
+    <Setter Property="Height" Value="30"/>
+    <Setter Property="CornerRadius" Value="8"/>
+    <Setter Property="Background" Value="{DynamicResource Accent}"/>
+</Style>
+
+<Style x:Key="BrandTitle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="14"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+</Style>
+
+<Style x:Key="BrandSub" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="10.5"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.TextDim}"/>
+    <Setter Property="Margin" Value="0,1,0,0"/>
+</Style>
+
+<Style x:Key="SideGroup" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="10"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.TextDim}"/>
+    <Setter Property="Margin" Value="12,14,0,7"/>
+</Style>
+
+<Style x:Key="SideNavItem" TargetType="Button">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Padding" Value="11,8"/>
+    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="FontSize" Value="12.5"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="Button">
+                <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.SelectionHover}"/>
+                    </Trigger>
+                    <Trigger Property="IsPressed" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.Selection}"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
+
+<Style x:Key="SideNavItemActive" TargetType="Button" BasedOn="{StaticResource SideNavItem}">
+    <Setter Property="Background" Value="{DynamicResource Bg.SidebarSel}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+</Style>
+
+<Style x:Key="SideIcon" TargetType="Path">
+    <Setter Property="Width" Value="15"/>
+    <Setter Property="Height" Value="15"/>
+    <Setter Property="Stretch" Value="None"/>
+    <Setter Property="StrokeThickness" Value="1.4"/>
+    <Setter Property="StrokeStartLineCap" Value="Round"/>
+    <Setter Property="StrokeEndLineCap" Value="Round"/>
+    <Setter Property="StrokeLineJoin" Value="Round"/>
+    <Setter Property="Stroke" Value="{DynamicResource Fg.TextMuted}"/>
+    <Setter Property="Fill" Value="Transparent"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="Margin" Value="0,0,10,0"/>
+</Style>
+<Style x:Key="SideIconActive" TargetType="Path" BasedOn="{StaticResource SideIcon}">
+    <Setter Property="Stroke" Value="{DynamicResource Accent}"/>
+</Style>
+
+<Style x:Key="SideFooter" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="10.5"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.TextDim}"/>
+</Style>
+
+<Style x:Key="HeaderBar" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource Bg.Panel}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
+    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    <Setter Property="Padding" Value="24,13"/>
+</Style>
+
+<Style x:Key="PageTitle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="17"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.Text}"/>
+</Style>
+
+<Style x:Key="PageSub" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="11.5"/>
+    <Setter Property="Foreground" Value="{DynamicResource Fg.TextMuted}"/>
+    <Setter Property="Margin" Value="0,3,0,0"/>
 </Style>
 
 <!-- ===== vector icons: inline geometry, no external assets, theme-aware stroke ===== -->
@@ -729,15 +847,15 @@ $themeStyles = @'
 
 <!-- ===== guided step rail ===== -->
 <Style x:Key="WizardRail" TargetType="Border">
-    <Setter Property="Background" Value="{DynamicResource Bg.Inset}"/>
+    <Setter Property="Background" Value="{DynamicResource Bg.Panel}"/>
     <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
     <Setter Property="BorderThickness" Value="0,0,0,1"/>
-    <Setter Property="Padding" Value="14,9"/>
+    <Setter Property="Padding" Value="24,8"/>
 </Style>
 <Style x:Key="StepDot" TargetType="Border">
-    <Setter Property="Width" Value="20"/>
-    <Setter Property="Height" Value="20"/>
-    <Setter Property="CornerRadius" Value="10"/>
+    <Setter Property="Width" Value="18"/>
+    <Setter Property="Height" Value="18"/>
+    <Setter Property="CornerRadius" Value="9"/>
     <Setter Property="Background" Value="{DynamicResource Bg.Control}"/>
     <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
     <Setter Property="BorderThickness" Value="1"/>
@@ -766,6 +884,7 @@ $themeStyles = @'
     <Setter Property="Foreground" Value="{DynamicResource Fg.OnAccent}"/>
 </Style>
 <Style x:Key="StepLabel" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="11.5"/>
     <Setter Property="VerticalAlignment" Value="Center"/>
     <Setter Property="Margin" Value="7,0,0,0"/>
     <Setter Property="Foreground" Value="{DynamicResource Fg.TextMuted}"/>
@@ -807,7 +926,7 @@ $themeStyles
 
     <DockPanel>
 
-        <Menu DockPanel.Dock="Top" Padding="7,5">
+        <Menu DockPanel.Dock="Top" Visibility="Collapsed" Padding="7,5">
             <MenuItem x:Name="menuFile" Header="_File">
                 <MenuItem x:Name="miOpen" Header="Open ODB..."/>
                 <Separator/>
@@ -826,40 +945,96 @@ $themeStyles
             <MenuItem x:Name="menuHelp" Header="_Help"/>
         </Menu>
 
-        <Border DockPanel.Dock="Top"
-                Background="{DynamicResource Bg.Toolbar}"
-                BorderBrush="{DynamicResource Border.Default}"
-                BorderThickness="0,0,0,1"
-                Padding="12,10">
+        <!-- =========================== left sidebar =========================== -->
+        <Border DockPanel.Dock="Left" Style="{StaticResource Sidebar}" Width="216">
+            <DockPanel>
+
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="18,20,14,16">
+                    <Border Style="{StaticResource BrandMark}">
+                        <TextBlock Text="OV" FontSize="12" FontWeight="Bold"
+                                   Foreground="{DynamicResource Fg.OnAccent}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="ODB2VTU-S" Style="{StaticResource BrandTitle}"/>
+                        <TextBlock x:Name="brandSub" Text="Workbench" Style="{StaticResource BrandSub}"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <Border DockPanel.Dock="Top" Height="1" Margin="14,0"
+                        Background="{DynamicResource Border.Sidebar}"/>
+
+                <StackPanel DockPanel.Dock="Top" Margin="10,0,10,0">
+                    <TextBlock x:Name="lblNavWorkspace" Text="工作台" Style="{StaticResource SideGroup}"/>
+
+                    <Button x:Name="navGoExport" Style="{StaticResource SideNavItemActive}" Margin="0,0,0,2">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource SideIconActive}" Data="{StaticResource IcoExport}"/>
+                            <TextBlock x:Name="navGoExportText" Text="数据导出"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="navGoCurve" Style="{StaticResource SideNavItem}" Margin="0,0,0,2">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource SideIcon}" Data="{StaticResource IcoChart}"/>
+                            <TextBlock x:Name="navGoCurveText" Text="曲线数据分析"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="navGoAnalysis" Style="{StaticResource SideNavItem}" Margin="0,0,0,2">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource SideIcon}" Data="{StaticResource IcoFields}"/>
+                            <TextBlock x:Name="navGoAnalysisText" Text="场变量分析"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="navGoCPFEM" Style="{StaticResource SideNavItem}" Margin="0,0,0,2">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource SideIcon}" Data="{StaticResource IcoRun}"/>
+                            <TextBlock x:Name="navGoCPFEMText" Text="摩擦 CPFEM 后处理"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="navGoSafety" Style="{StaticResource SideNavItem}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource SideIcon}" Data="{StaticResource IcoCheck}"/>
+                            <TextBlock x:Name="navGoSafetyText" Text="诊断与恢复"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <StackPanel DockPanel.Dock="Bottom" Margin="20,0,18,16">
+                    <Border Height="1" Margin="0,0,0,12" Background="{DynamicResource Border.Sidebar}"/>
+                    <TextBlock x:Name="brandVersion" Text="v1.0.0 · Abaqus 2024" Style="{StaticResource SideFooter}"/>
+                    <TextBlock x:Name="brandPlatform" Text="Linux / Windows" Style="{StaticResource SideFooter}" Margin="0,2,0,0"/>
+                </StackPanel>
+
+                <Border/>
+            </DockPanel>
+        </Border>
+
+        <!-- ============================== header ============================== -->
+        <Border DockPanel.Dock="Top" Style="{StaticResource HeaderBar}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Orientation="Horizontal">
-                    <Button x:Name="tbOpen" Style="{StaticResource PrimaryButton}">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Style="{StaticResource ToolIconOnAccent}" Data="{StaticResource IcoOpen}"/>
-                            <TextBlock x:Name="tbOpenText" Text="Open ODB" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="tbOpenFolder" Margin="8,0,0,0">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="hdrPageTitle" Text="数据导出" Style="{StaticResource PageTitle}"/>
+                    <TextBlock x:Name="hdrPageSub" Text="ODB → VTU 逐帧导出与增量更新" Style="{StaticResource PageSub}"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="tbOpenFolder" Margin="0,0,8,0">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoFolder}"/>
                             <TextBlock x:Name="tbOpenFolderText" Text="Open Output Folder" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
-                </StackPanel>
-
-                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <TextBlock x:Name="lblTheme" Text="Theme" VerticalAlignment="Center" Margin="0,0,7,0" Foreground="{DynamicResource Fg.TextMuted}"/>
-                    <ComboBox x:Name="cmbTheme" Width="98" Height="30">
+                    <Border Style="{StaticResource ToolbarSep}"/>
+                    <ComboBox x:Name="cmbTheme" Width="92" Height="30" ToolTip="Theme">
                         <ComboBoxItem Content="Light" Tag="light"/>
                         <ComboBoxItem Content="Dark" Tag="dark"/>
                     </ComboBox>
-                    <TextBlock x:Name="lblLanguage" Text="Language" VerticalAlignment="Center" Margin="16,0,7,0" Foreground="{DynamicResource Fg.TextMuted}"/>
-                    <ComboBox x:Name="cmbLanguage" Width="106" Height="30">
+                    <ComboBox x:Name="cmbLanguage" Width="96" Height="30" Margin="6,0,0,0" ToolTip="Language">
                         <ComboBoxItem Content="English" Tag="en"/>
                         <ComboBoxItem Content="中文" Tag="zh"/>
                     </ComboBox>
@@ -908,18 +1083,18 @@ $themeStyles
             <StatusBarItem><TextBlock x:Name="txtStatusRight" Text="ODB: not loaded" Foreground="{DynamicResource Fg.TextMuted}"/></StatusBarItem>
         </StatusBar>
 
-        <Grid Margin="10">
+        <Grid Margin="18,16,18,14">
             <!-- Top row = options (wide, left) + selection summary (right).
                  Bottom row = Output and Output Messages side by side. -->
             <Grid.RowDefinitions>
-                <RowDefinition Height="*" MinHeight="200"/>
-                <RowDefinition Height="8"/>
-                <RowDefinition Height="Auto" MinHeight="150"/>
+                <RowDefinition Height="1.1*" MinHeight="190"/>
+                <RowDefinition Height="14"/>
+                <RowDefinition Height="1*" MinHeight="170"/>
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="colLeftPanel" Width="*" MinWidth="430"/>
-                <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="390" MinWidth="270"/>
+                <ColumnDefinition x:Name="colLeftPanel" Width="*" MinWidth="420"/>
+                <ColumnDefinition Width="14"/>
+                <ColumnDefinition Width="372" MinWidth="270"/>
             </Grid.ColumnDefinitions>
 
             <!-- ============================ LEFT: properties ============================ -->
@@ -927,22 +1102,15 @@ $themeStyles
                 <DockPanel>
 
                     <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
-                        <TextBlock x:Name="hdrProperties" Text="Properties" Style="{StaticResource SectionTitle}"/>
-                    </Border>
-
-                    <Border DockPanel.Dock="Top"
-                            Background="{DynamicResource Bg.Panel}"
-                            BorderBrush="{DynamicResource Border.Default}"
-                            BorderThickness="0,0,0,1"
-                            Padding="12,9">
-                        <StackPanel Orientation="Horizontal">
-                            <Button x:Name="btnReset" Width="88">
+                        <Grid>
+                            <TextBlock x:Name="hdrProperties" Text="Properties" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+                            <Button x:Name="btnReset" HorizontalAlignment="Right" Padding="9,3" MinHeight="26">
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoReset}"/>
                                     <TextBlock x:Name="btnResetText" Text="Reset" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
-                        </StackPanel>
+                        </Grid>
                     </Border>
 
                     <!-- Option tree (left) + the selected section's options (right).
@@ -950,7 +1118,7 @@ $themeStyles
                          no longer scrolls through every group. -->
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="184" MinWidth="134"/>
+                            <ColumnDefinition Width="158" MinWidth="118"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
@@ -1355,14 +1523,15 @@ $themeStyles
                 <Border x:Name="cardOutput" Grid.Column="0" Style="{StaticResource Card}">
                     <DockPanel>
                         <Border DockPanel.Dock="Top" Style="{StaticResource CardHeader}">
-                            <TextBlock Text="Output" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock x:Name="hdrOutput" Text="Output" Style="{StaticResource SectionTitle}"/>
                         </Border>
 
-                        <Grid Margin="12,10,12,10">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <Grid Margin="14,12,14,12">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" MinWidth="205"/>
-                                <ColumnDefinition Width="18"/>
-                                <ColumnDefinition Width="2.4*" MinWidth="300"/>
+                                <ColumnDefinition Width="1*" MinWidth="168"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="1.8*" MinWidth="248"/>
                             </Grid.ColumnDefinitions>
 
                             <!-- Where the data goes. -->
@@ -1396,17 +1565,23 @@ $themeStyles
                             <StackPanel Grid.Column="2">
                                 <TextBlock x:Name="lblIncPolicy" Text="增量更新策略 / Incremental Update Policy"
                                            Style="{StaticResource SectionTitle}"/>
+                                <!-- Label + combo pairs wrap as a unit, so a narrow card never
+                                     separates "Frames" from its own dropdown. -->
                                 <WrapPanel Margin="0,7,0,0">
-                                    <TextBlock Text="Frames" Style="{StaticResource FieldLabel}" Margin="0,0,6,0"/>
-                                    <ComboBox x:Name="cmbFramePolicy" SelectedIndex="0">
-                                        <ComboBoxItem Content="合并/保留既有帧 / Merge" Tag="merge"/>
-                                        <ComboBoxItem Content="同步当前选择 / Sync" Tag="sync"/>
-                                    </ComboBox>
-                                    <TextBlock Text="Fields" Style="{StaticResource FieldLabel}" Margin="14,0,6,0"/>
-                                    <ComboBox x:Name="cmbFieldPolicy" SelectedIndex="0">
-                                        <ComboBoxItem Content="合并/保留既有变量 / Merge" Tag="merge"/>
-                                        <ComboBoxItem Content="同步当前变量 / Sync" Tag="sync"/>
-                                    </ComboBox>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,16,6">
+                                        <TextBlock x:Name="lblPolicyFrames" Text="Frames" Style="{StaticResource FieldLabel}" Margin="0,0,6,0"/>
+                                        <ComboBox x:Name="cmbFramePolicy" SelectedIndex="0" MinWidth="150" MaxWidth="230">
+                                            <ComboBoxItem Content="合并/保留既有帧 / Merge" Tag="merge"/>
+                                            <ComboBoxItem Content="同步当前选择 / Sync" Tag="sync"/>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <TextBlock x:Name="lblPolicyFields" Text="Fields" Style="{StaticResource FieldLabel}" Margin="0,0,6,0"/>
+                                        <ComboBox x:Name="cmbFieldPolicy" SelectedIndex="0" MinWidth="150" MaxWidth="230">
+                                            <ComboBoxItem Content="合并/保留既有变量 / Merge" Tag="merge"/>
+                                            <ComboBoxItem Content="同步当前变量 / Sync" Tag="sync"/>
+                                        </ComboBox>
+                                    </StackPanel>
                                 </WrapPanel>
 
                                 <TextBlock x:Name="lblCompatMode" Text="旧版数据兼容模式" Style="{StaticResource FieldLabel}" Margin="0,9,0,0"/>
@@ -1429,6 +1604,7 @@ $themeStyles
                                            Style="{StaticResource HintText}"/>
                             </StackPanel>
                         </Grid>
+                        </ScrollViewer>
                     </DockPanel>
                 </Border>
 
@@ -1506,7 +1682,10 @@ Set-AppIcon $window
 
 $names = @(
 "menuFile","miOpen","miExit","menuEdit","menuView","menuTools","miCurveData","miFieldAnalysis","miCPFEM","miDataSafety","menuHelp",
-"tbOpen","tbOpenFolder","tbOpenText","tbOpenFolderText","lblTheme","cmbTheme","lblLanguage","cmbLanguage",
+"tbOpenFolder","tbOpenFolderText","cmbTheme","cmbLanguage",
+"navGoExport","navGoExportText","navGoCurve","navGoCurveText","navGoAnalysis","navGoAnalysisText",
+"navGoCPFEM","navGoCPFEMText","navGoSafety","navGoSafetyText","lblNavWorkspace",
+"hdrPageTitle","hdrPageSub","brandSub","brandVersion","brandPlatform",
 "stepDot1","stepNum1","stepLbl1","stepDot2","stepNum2","stepLbl2","stepDot3","stepNum3","stepLbl3","stepDot4","stepNum4","stepLbl4","stepDot5","stepNum5","stepLbl5","btnNextStep","btnNextStepText",
 "hdrProperties","btnReset","btnResetText","cardOutput",
 "navList","navGroupData","navSource","navTarget","navGroupSeries","navSeries","navGroupFields","navFields","navDerived","navGND","navDifference",
@@ -1521,6 +1700,7 @@ $names = @(
 "grpGND","chkGNDDiff","lblGNDDat","txtGNDDat","btnBrowseGNDDat","lblGNDMode","cmbGNDMode","chkGNDSlideDiff","lblGNDSlideRef","cmbGNDSlideRef","txtGNDHint",
 "grpDifference","chkDelta","lblDiffField","cmbDeltaField","lblRefStep","cmbRefStep","lblRefFrame","cmbRefFrame",
 "lblBBox","txtBBox","chkAutoOutput","btnChooseOutputFolder","lblOutputFile","txtOutput","btnBrowseOutput",
+"hdrOutput","lblPolicyFrames","lblPolicyFields",
 "cmbFramePolicy","cmbFieldPolicy","cmbCompatMode","lblCompatMode","txtCompatHint","chkInPlace","chkCleanupRemoved",
 "lblIncPolicy","txtPolicyHint",
 "hdrSummary","txtSummary","hdrMessages","btnClearMessages","txtMessages",
@@ -1654,12 +1834,17 @@ SeriesStep="Steps"; AvailableFrames="Common frames"; AddFrames="Add ticked frame
 SelectedStates="Selected Step / Frame states"; RemoveStates="Remove ticked"; ClearStates="Clear all";
 Fields="Fields"; ReadFrameFields="Read fields from selected frame"; SelectAll="Select all"; Clear="Clear"; Derived="Derived Fields"; Mises="Mises Stress"; InitialIPF="Initial IPF (HCP Ti)"; INPFile="INP File"; IPFDirection="IPF Direction"; DerivedHint="Mises is derived from S. Initial IPF reads Grain material Euler angles from INP PROPS(1:3)."; GND="GND Evolution"; GNDDiff="Compare gnd_field.dat with SDV11-28"; GNDDat="GND DAT"; GNDMode="Output"; GNDHint="DAT difference uses gnd_field.dat. Sliding-start difference uses a fixed ODB baseline and outputs 18 slip-system increments."; GNDSlideDiff="Sliding-start difference (18 slip systems)"; GNDSlideRef="Reference";
 Difference="Difference"; EnableDiff="Enable target - reference"; DiffField="Field"; RefStep="Reference Step"; RefFrame="Reference Frame";
-BBox="Bounding Box"; AutoOutput="Auto-match ODB output folder"; SelectOutputFolder="Select Output Folder..."; OutputFile="Output File"; Summary="Selection Summary"; Messages="Output Messages";
+BBox="Bounding Box"; AutoOutput="Auto-match ODB output folder"; SelectOutputFolder="Select Output Folder..."; OutputFile="Output File"; Summary="Selection Summary"; Messages="Output Messages"; Output="Output";
 IncPolicy="Incremental Update Policy"; PolicyHint="Merge is the safe default; only Sync deletes.";
+OutputMode="Output mode"; AutoMode="Auto"; CustomFolder="Custom folder"; FramePolicy="Frame policy"; FieldPolicy="Field policy";
+CleanupRemoved="Cleanup removed VTU"; WriteMode="Write mode"; GNDSlideStart="GND sliding start";
 Ready="Ready"; NoODB="ODB: not loaded"; Whole="<Whole Instance>"; AllGrains="<All Grains>";
 SeriesCount="Selected states";
 StepSource="Source"; StepState="State"; StepFields="Fields"; StepOutput="Output"; StepExport="Export"; Next="Next";
-PickState="Select instance / element set"; PickFields="Select fields to export"; PickOutput="Choose output file"
+PickState="Select instance / element set"; PickFields="Select fields to export"; PickOutput="Choose output file";
+NavWorkspace="Workspace"; NavExport="Data Export"; NavCurve="Curve Data"; NavAnalysis="Field Analysis"; NavCPFEM="Friction CPFEM"; NavSafety="Audit & Recovery";
+PageExportTitle="Data Export"; PageExportSub="Frame-by-frame ODB to VTU export with incremental update"; BrandSub="Workbench";
+BrandVersion="v1.0.0 · Abaqus 2024"; BrandPlatform="Linux / Windows"; ThemeTip="Theme"; LanguageTip="Language"
 }
 zh = @{
 Window="ODB2VTU-S 统一工作台"; File="_文件"; Open="打开 ODB..."; Exit="退出"; Edit="_编辑"; View="_视图"; Tools="_工具"; Help="_帮助";
@@ -1675,22 +1860,30 @@ SeriesStep="分析步（可多选）"; AvailableFrames="公共可选帧"; AddFra
 SelectedStates="已选分析步 / 帧"; RemoveStates="移除勾选项"; ClearStates="清空全部";
 Fields="场变量"; ReadFrameFields="读取当前帧场变量"; SelectAll="全选"; Clear="清空"; Derived="派生场"; Mises="Mises 应力"; InitialIPF="初始 IPF（HCP Ti）"; INPFile="INP 文件"; IPFDirection="IPF 方向"; DerivedHint="Mises 由 S 计算；初始 IPF 从 INP 中各 Grain 材料的 PROPS(1:3) 欧拉角生成。"; GND="GND 增量"; GNDDiff="计算 gnd_field.dat 与 SDV11-28 差值"; GNDDat="GND DAT"; GNDMode="输出"; GNDHint="DAT差值：当前SDV11-28减去gnd_field.dat初始分配值；滑动起点差值：当前SDV11-28减去滑动开始参考帧。均输出18个滑移系。"; GNDSlideDiff="滑动起点差值（18滑移系）"; GNDSlideRef="参考帧";
 Difference="差值"; EnableDiff="启用 目标帧 - 参考帧"; DiffField="场变量"; RefStep="参考分析步"; RefFrame="参考帧";
-BBox="包围盒"; AutoOutput="自动匹配 ODB 输出目录"; SelectOutputFolder="选择输出文件夹..."; OutputFile="输出文件"; Summary="选择摘要"; Messages="输出消息";
+BBox="包围盒"; AutoOutput="自动匹配 ODB 输出目录"; SelectOutputFolder="选择输出文件夹..."; OutputFile="输出文件"; Summary="选择摘要"; Messages="输出消息"; Output="输出";
 IncPolicy="增量更新策略"; PolicyHint="Merge 为安全默认；只有 Sync 才执行删除语义。";
+OutputMode="输出模式"; AutoMode="自动"; CustomFolder="自定义目录"; FramePolicy="帧策略"; FieldPolicy="场变量策略"; CleanupRemoved="清理已删除的 VTU"; WriteMode="写入模式"; GNDSlideStart="GND 滑移起点";
 Ready="就绪"; NoODB="ODB：未加载"; Whole="<整个实例>"; AllGrains="<所有晶粒>";
 SeriesCount="已选状态数";
 StepSource="数据源"; StepState="目标状态"; StepFields="场变量"; StepOutput="输出"; StepExport="导出"; Next="下一步";
-PickState="选择实例 / 单元集"; PickFields="选择要导出的场变量"; PickOutput="选择输出文件"
+PickState="选择实例 / 单元集"; PickFields="选择要导出的场变量"; PickOutput="选择输出文件";
+NavWorkspace="工作台"; NavExport="数据导出"; NavCurve="曲线数据分析"; NavAnalysis="场变量分析"; NavCPFEM="摩擦 CPFEM 后处理"; NavSafety="诊断与恢复";
+PageExportTitle="数据导出"; PageExportSub="ODB → VTU 逐帧导出与增量更新"; BrandSub="Workbench";
+BrandVersion="v1.0.0 · Abaqus 2024"; BrandPlatform="Linux / Windows"; ThemeTip="主题"; LanguageTip="语言"
 }
 }
 
 function L([string]$k){ return $T[$script:lang][$k] }
+
+# Inline bilingual helper for code-built text (summaries, logs) that is not in $T.
+function LS([string]$en, [string]$cn){ if($script:lang -eq 'zh'){ return $cn } return $en }
 
 # Visible WPF strings only. Never mutate Tag, x:Name, command arguments or array identifiers.
 function Localize-SubwindowXaml([xml]$Document, [string]$Lang) {
     $pairs = @{
       'Field Extremum Analysis'=@('场变量极值分析','Field Extremum Analysis')
       'ODB2VTU-S Workbench - Field Extremum Analysis'=@('ODB2VTU-S 统一工作台 - 场变量极值分析','ODB2VTU-S Workbench - Field Extremum Analysis')
+      'ODB2VTU-S Workbench - Curve Data'=@('ODB2VTU-S 统一工作台 - 曲线数据','ODB2VTU-S Workbench - Curve Data')
       'Top N grains'=@('晶粒数量 Top N','Top N grains')
       'Rank statistic'=@('排序统计量','Rank statistic')
       'Direction'=@('排序方向','Direction')
@@ -2192,11 +2385,17 @@ function ApplyLanguage {
     $menuEdit.Header = L "Edit"; $menuView.Header = L "View"; $menuTools.Header = L "Tools"; $miCurveData.Header = L "CurveData"; $miFieldAnalysis.Header = L "FieldAnalysis"; $menuHelp.Header = L "Help"
     $miCPFEM.Header = L "CPFEM"; $miDataSafety.Header = L "DataSafety"
 
-    $tbOpenText.Text = L "OpenODB"; $tbOpenFolderText.Text = L "OpenFolder"
-    $lblLanguage.Text = L "Language"
-    $lblTheme.Text = L "Theme"
+    $tbOpenFolderText.Text = L "OpenFolder"
+    $cmbTheme.ToolTip = L "ThemeTip"; $cmbLanguage.ToolTip = L "LanguageTip"
     $cmbTheme.Items[0].Content = L "ThemeLight"
     $cmbTheme.Items[1].Content = L "ThemeDark"
+
+    $lblNavWorkspace.Text = L "NavWorkspace"
+    $navGoExportText.Text = L "NavExport"; $navGoCurveText.Text = L "NavCurve"
+    $navGoAnalysisText.Text = L "NavAnalysis"; $navGoCPFEMText.Text = L "NavCPFEM"
+    $navGoSafetyText.Text = L "NavSafety"
+    $hdrPageTitle.Text = L "PageExportTitle"; $hdrPageSub.Text = L "PageExportSub"
+    $brandSub.Text = L "BrandSub"; $brandVersion.Text = L "BrandVersion"; $brandPlatform.Text = L "BrandPlatform"
     if($script:lang -eq 'zh') {
         $cmbFramePolicy.Items[0].Content='合并／保留既有帧'
         $cmbFramePolicy.Items[1].Content='同步当前所选帧'
@@ -2250,6 +2449,7 @@ function ApplyLanguage {
     $hdrDifference.Text = L "Difference"; $chkDelta.Content = L "EnableDiff"; $lblDiffField.Text = L "DiffField"; $lblRefStep.Text = L "RefStep"; $lblRefFrame.Text = L "RefFrame"
 
     $lblBBox.Text = L "BBox"; $chkAutoOutput.Content = L "AutoOutput"; $btnChooseOutputFolder.Content = L "SelectOutputFolder"; $lblOutputFile.Text = L "OutputFile"; $hdrSummary.Text = L "Summary"; $hdrMessages.Text = L "Messages"; $btnClearMessages.Content = L "Clear"
+    $hdrOutput.Text = L "Output"; $lblPolicyFrames.Text = L "Frame"; $lblPolicyFields.Text = L "Fields"; $lblIncPolicy.Text = L "IncPolicy"
 
     if($global:meta -eq $null){ $txtStatus.Text = L "Ready" }
     if([string]::IsNullOrWhiteSpace($txtOdb.Text)){ $txtStatusRight.Text = L "NoODB" }
@@ -2282,7 +2482,7 @@ function UpdateSummary {
             }
 
             foreach($x in ($script:selectedStates | Sort-Object @{Expression={$order[$_.Step]}}, @{Expression={[int]$_.Frame}})){
-                $s += "  " + $x.Step + " / Frame " + $x.Frame + "`r`n"
+                $s += "  " + $x.Step + " / " + (L "Frame") + " " + $x.Frame + "`r`n"
             }
         }
     }
@@ -2306,7 +2506,7 @@ function UpdateSummary {
     if($chkGNDSlideDiff.IsChecked){
         $sr = "-"
         if($cmbGNDSlideRef.SelectedItem -ne $null){ $sr = $cmbGNDSlideRef.SelectedItem.Content.ToString() }
-        $s += "GND Sliding Start : " + $sr + "`r`n"
+        $s += (L "GNDSlideStart") + " : " + $sr + "`r`n"
     }
 
     if($chkDelta.IsChecked -and $cmbDeltaField.SelectedItem){
@@ -2318,17 +2518,17 @@ function UpdateSummary {
     }
 
     if($chkAutoOutput.IsChecked){
-        $s += "Output mode : Auto -> ODB2VTU_Output`r`n"
+        $s += (L "OutputMode") + " : " + (L "AutoMode") + " -> ODB2VTU_Output`r`n"
     } else {
-        $s += "Output mode : Custom folder -> " + $script:customFieldOutputDir + "`r`n"
+        $s += (L "OutputMode") + " : " + (L "CustomFolder") + " -> " + $script:customFieldOutputDir + "`r`n"
     }
 
     $fp = "merge"; if($cmbFramePolicy.SelectedItem){ $fp = $cmbFramePolicy.SelectedItem.Tag.ToString() }
     $fldp = "merge"; if($cmbFieldPolicy.SelectedItem){ $fldp = $cmbFieldPolicy.SelectedItem.Tag.ToString() }
-    $s += "Frame policy : " + $fp + "`r`n"
-    $s += "Field policy : " + $fldp + "`r`n"
-    if($chkCleanupRemoved.IsChecked){ $s += "Cleanup removed VTU : yes`r`n" }
-    $s += "Write mode : " + $(if($chkInPlace.IsChecked){'in_place'}else{'safe_copy'}) + "`r`n"
+    $s += (L "FramePolicy") + " : " + $fp + "`r`n"
+    $s += (L "FieldPolicy") + " : " + $fldp + "`r`n"
+    if($chkCleanupRemoved.IsChecked){ $s += (L "CleanupRemoved") + " : " + $(if($script:lang -eq 'zh'){'是'}else{'yes'}) + "`r`n" }
+    $s += (L "WriteMode") + " : " + $(if($chkInPlace.IsChecked){'in_place'}else{'safe_copy'}) + "`r`n"
     
     $s += (L "OutputFile") + " : " + $txtOutput.Text
     $txtSummary.Text = $s
@@ -2847,29 +3047,36 @@ $(Get-ThemeBrushXaml $script:theme)
 $themeStyles
   </Window.Resources>
   <DockPanel>
-    <Border DockPanel.Dock="Top" Background="{DynamicResource Bg.Toolbar}" BorderBrush="{DynamicResource Border.Default}" BorderThickness="0,0,0,1" Padding="12,10">
-      <StackPanel Orientation="Horizontal">
-        <Button x:Name="aBtnReadFields">
-          <StackPanel Orientation="Horizontal">
-            <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoMeta}"/>
-            <TextBlock Text="读取可分析变量 / Read Variables" VerticalAlignment="Center"/>
-          </StackPanel>
-        </Button>
-        <Button x:Name="aBtnRun" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}">
-          <StackPanel Orientation="Horizontal">
-            <Path Style="{StaticResource ToolIconOnAccent}" Data="{StaticResource IcoRun}"/>
-            <TextBlock Text="运行分析 / Run Analysis" VerticalAlignment="Center"/>
-          </StackPanel>
-        </Button>
-        <Button x:Name="aBtnOpen" Margin="8,0,0,0">
-          <StackPanel Orientation="Horizontal">
-            <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoFolder}"/>
-            <TextBlock Text="打开输出目录 / Open Folder" VerticalAlignment="Center"/>
-          </StackPanel>
-        </Button>
-      </StackPanel>
+    <Border DockPanel.Dock="Top" Style="{StaticResource HeaderBar}">
+      <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="场变量极值分析 / Field Extremum Analysis" Style="{StaticResource PageTitle}"/>
+          <TextBlock Text="按晶粒统计场变量极值并可选导出分析 VTU / Grain-wise extrema with optional VTU export" Style="{StaticResource PageSub}" TextWrapping="Wrap"/>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+          <Button x:Name="aBtnReadFields">
+            <StackPanel Orientation="Horizontal">
+              <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoMeta}"/>
+              <TextBlock Text="读取可分析变量 / Read Variables" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+          <Button x:Name="aBtnRun" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}">
+            <StackPanel Orientation="Horizontal">
+              <Path Style="{StaticResource ToolIconOnAccent}" Data="{StaticResource IcoRun}"/>
+              <TextBlock Text="运行分析 / Run Analysis" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+          <Button x:Name="aBtnOpen" Margin="8,0,0,0">
+            <StackPanel Orientation="Horizontal">
+              <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoFolder}"/>
+              <TextBlock Text="打开输出目录 / Open Folder" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Grid>
     </Border>
-    <Grid Margin="8">
+    <Grid Margin="16,14,16,14">
       <Grid.ColumnDefinitions><ColumnDefinition Width="400"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
         <StackPanel>
@@ -3055,37 +3262,40 @@ $themeStyles
     </Window.Resources>
 
     <DockPanel>
-        <Border DockPanel.Dock="Top"
-                Background="{DynamicResource Bg.Toolbar}"
-                BorderBrush="{DynamicResource Border.Default}"
-                BorderThickness="0,0,0,1"
-                Padding="12,10">
-            <StackPanel Orientation="Horizontal">
-                <Button x:Name="cBtnReadMeta">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoMeta}"/>
-                        <TextBlock Text="Read History Metadata" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <Button x:Name="cBtnExport" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Style="{StaticResource ToolIconOnAccent}" Data="{StaticResource IcoExport}"/>
-                        <TextBlock Text="Export CSV" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <Button x:Name="cBtnFriction" Margin="8,0,0,0">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoChart}"/>
-                        <TextBlock Text="Friction CSV (ALL/NORMAL/TANGENTIAL/DIAGNOSTIC)" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <Button x:Name="cBtnOpenFolder" Margin="8,0,0,0">
-                    <StackPanel Orientation="Horizontal">
-                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoFolder}"/>
-                        <TextBlock Text="Open Output Folder" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-            </StackPanel>
+        <Border DockPanel.Dock="Top" Style="{StaticResource HeaderBar}">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="曲线数据分析 / Curve Data" Style="{StaticResource PageTitle}"/>
+                    <TextBlock Text="History 曲线读取、变换与 CSV 导出 / History curves, transforms and CSV export" Style="{StaticResource PageSub}" TextWrapping="Wrap"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                    <Button x:Name="cBtnReadMeta">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoMeta}"/>
+                            <TextBlock Text="读取 History 元数据 / Read Metadata" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="cBtnFriction" Margin="8,0,0,0" ToolTip="ALL / NORMAL / TANGENTIAL / DIAGNOSTIC">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoChart}"/>
+                            <TextBlock Text="摩擦 CSV / Friction CSV" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="cBtnOpenFolder" Margin="8,0,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IcoFolder}"/>
+                            <TextBlock Text="打开输出目录 / Open Folder" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="cBtnExport" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource ToolIconOnAccent}" Data="{StaticResource IcoExport}"/>
+                            <TextBlock Text="导出 CSV / Export CSV" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
         </Border>
 
         <StatusBar DockPanel.Dock="Bottom" Height="28">
@@ -3686,23 +3896,23 @@ $themeStyles
         $steps = SelectedCurveSteps
         $s = ""
 
-        $s += "ODB: " + $cTxtOdb.Text + "`r`n"
-        $s += "Steps: " + $steps.Count + "`r`n"
+        $s += (LS "ODB" "ODB") + ": " + $cTxtOdb.Text + "`r`n"
+        $s += (LS "Steps" "分析步") + ": " + $steps.Count + "`r`n"
         foreach($st in $steps){ $s += "  " + $st + "`r`n" }
 
-        $s += "Region: " + ($(if($cCmbRegion.SelectedItem){(SelectedRegionName)}else{"-"})) + "`r`n"
-        $s += "Preset: " + ($(if($cCmbPreset.SelectedItem){$cCmbPreset.SelectedItem}else{"-"})) + "`r`n"
+        $s += (LS "Region" "区域") + ": " + ($(if($cCmbRegion.SelectedItem){(SelectedRegionName)}else{"-"})) + "`r`n"
+        $s += (LS "Preset" "预设") + ": " + ($(if($cCmbPreset.SelectedItem){$cCmbPreset.SelectedItem}else{"-"})) + "`r`n"
         $s += "X: " + ($(if($cCmbX.SelectedItem){$cCmbX.SelectedItem}else{"-"})) + "`r`n"
         $s += "Y: " + ($(if($cCmbY.SelectedItem){$cCmbY.SelectedItem}else{"-"})) + "`r`n"
         $s += "|X|: " + $cChkAbsX.IsChecked + "    |Y|: " + $cChkAbsY.IsChecked + "`r`n"
-        $s += "X scale/offset: " + $cTxtXScale.Text + " / " + $cTxtXOffset.Text + "`r`n"
-        $s += "Y scale/offset: " + $cTxtYScale.Text + " / " + $cTxtYOffset.Text + "`r`n"
+        $s += (LS "X scale/offset" "X 缩放/偏移") + ": " + $cTxtXScale.Text + " / " + $cTxtXOffset.Text + "`r`n"
+        $s += (LS "Y scale/offset" "Y 缩放/偏移") + ": " + $cTxtYScale.Text + " / " + $cTxtYOffset.Text + "`r`n"
         if($cChkAutoOutput.IsChecked){
-            $s += "Output mode: Auto -> ODB2VTU_Output`r`n"
+            $s += (L "OutputMode") + ": " + (L "AutoMode") + " -> ODB2VTU_Output`r`n"
         } else {
-            $s += "Output mode: Custom folder -> " + $script:customCurveOutputDir + "`r`n"
+            $s += (L "OutputMode") + ": " + (L "CustomFolder") + " -> " + $script:customCurveOutputDir + "`r`n"
         }
-        $s += "Output: " + $cTxtOutput.Text
+        $s += (L "Output") + ": " + $cTxtOutput.Text
 
         $cTxtSummary.Text = $s
     }
@@ -4029,9 +4239,18 @@ $miDataSafety.Add_Click({
     Show-DataSafetyWorkspace $pvd $script:lang
 })
 
-$tbOpen.Add_Click({ BrowseODB })
-$btnBrowse.Add_Click({ BrowseODB })
+# Sidebar mirrors the (hidden) menu so both entry points stay in sync.
+function Invoke-HiddenMenu([System.Windows.Controls.MenuItem]$Item){
+    if($Item -eq $null){ return }
+    $Item.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.MenuItem]::ClickEvent)))
+}
+$navGoExport.Add_Click({ $window.Activate() })
+$navGoCurve.Add_Click({ Invoke-HiddenMenu $miCurveData })
+$navGoAnalysis.Add_Click({ Invoke-HiddenMenu $miFieldAnalysis })
+$navGoCPFEM.Add_Click({ Invoke-HiddenMenu $miCPFEM })
+$navGoSafety.Add_Click({ Invoke-HiddenMenu $miDataSafety })
 
+$btnBrowse.Add_Click({ BrowseODB })
 $btnRead.Add_Click({ ReadMeta })
 
 $btnReadFields.Add_Click({ ReadFields })

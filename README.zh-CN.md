@@ -11,7 +11,7 @@
 
 ODB2VTU-S 是面向 Windows/Linux 的统一工作台，用于从大型 Abaqus ODB 中选择性读取结果，导出 ParaView 可视化数据，并进行晶粒尺度与 CPFEM 后处理。
 
-**当前源码更新（v1.0.1）：** Linux 工作台已更新页面布局、侧栏导航和中英文界面文本。ODB/VTU 数值处理后端及已验证的 Windows 原始 EXE 均未变更。在 v1.0.1 正式 Release 发布之前，下载页仍提供 v1.0.0 安装包。
+**v1.0.1 界面更新：** Windows 工作台采用新版绿色主题与左侧功能导航，数据导出页面重新布局；Linux 同步优化导航与中英文界面。原有 ODB/VTU 数值后端保留。[查看更新说明](docs/RELEASE_NOTES_v1.0.1.md)。
 
 ## 统一工作台
 
@@ -19,7 +19,7 @@ Windows 版采用清晰的五步操作流程：
 
 **① 数据源 → ② 目标状态 → ③ 场变量 → ④ 输出 → ⑤ 导出**
 
-界面提供**选择摘要、输出设置、运行日志、明暗主题和中英文切换**。曲线分析、晶粒场分析、CPFEM 后处理及数据诊断/恢复等功能可从菜单进入。
+界面提供**选择摘要、输出设置、运行日志、明暗主题和中英文切换**。左侧 **Workspace** 导航提供 **Data Export（数据导出）、Curve Data（曲线数据）、Field Analysis（场变量分析）、Friction CPFEM（摩擦后处理）、Audit & Recovery（诊断与恢复）**；数据导出页保留数据源、目标状态、场变量、输出和导出五步流程。
 
 ![ODB2VTU-S 数据导出界面](docs/images/odb2vtu-s-exporter.png)
 
@@ -33,14 +33,14 @@ Windows 版采用清晰的五步操作流程：
 
 ## 下载与运行环境
 
-**[下载 v1.0.0 正式版](https://github.com/yline0829/ODB2VTU-S/releases/tag/v1.0.0)**
+**[下载最新正式版](https://github.com/yline0829/ODB2VTU-S/releases/latest)**
 
 | 平台 | 程序包 | 环境 |
 | --- | --- | --- |
-| Windows | `ODB2VTU-S_Windows_v1.0.0.zip` | Windows、PowerShell/.NET、Abaqus |
-| Linux | `ODB2VTU-S_Workbench_Linux_v1.0.0.zip` 或 `.tar.gz` | Python 3 + Tkinter；适配 CentOS 7、SingularityCE、Abaqus 2024 |
+| Windows | Windows EXE（`odb2vtu.exe`）及最新 Release 附件 | Windows、PowerShell/.NET、Abaqus |
+| Linux | Linux ZIP（以最新 Release 附件为准） | Python 3 + Tkinter；适配 CentOS 7、SingularityCE、Abaqus 2024 |
 
-Windows 包采用**用户实际测试通过的原始 EXE**；Linux 包完成了独立的语法、打包和安装检查。读取 ODB 需要用户自行安装并获得合法许可的 Abaqus（含 `odbAccess`）。原位更新或 ODB 写回前建议备份重要数据。
+v1.0.1 Windows EXE 包含**新界面**，原有内嵌计算后端保留；Linux 包完成了独立的语法与打包检查。本次尚未在真实大型 ODB 数据上独立复测 Windows 新版界面。读取 ODB 需要用户自行安装并获得合法许可的 Abaqus（含 `odbAccess`）。原位更新或 ODB 写回前建议备份重要数据。
 
 [Windows 使用说明](docs/install-windows.md) · [Linux 安装说明](docs/install-linux.md) · [增量更新说明](docs/incremental-export.md) · [PEEQCP 方法](docs/peeqcp.md) · [v1.0.0 基准说明](docs/validated-v1.0.0.md)
 

@@ -11,7 +11,7 @@
 
 ODB2VTU-S is a Windows/Linux workbench for extracting selected results from large Abaqus ODB files and preparing ParaView visualizations and CPFEM analyses.
 
-**Development update (v1.0.1):** The Linux Workbench now has redesigned navigation, page layout and bilingual UI text. The ODB/VTU computation backend and original user-tested Windows executable are unchanged. The published v1.0.0 packages remain available until the new release is published.
+**v1.0.1 UI update:** The Windows Workbench now features a refreshed green-and-neutral theme, left workspace navigation, and reorganized export pages. The Linux Workbench has also been updated with improved navigation and bilingual labels. The ODB/VTU numerical backends are retained. [What changed](docs/RELEASE_NOTES_v1.0.1.md).
 
 ## Unified Workbench
 
@@ -19,7 +19,7 @@ The Windows interface follows a five-step workflow:
 
 **1. Data Source → 2. Target States → 3. Field Variables → 4. Output → 5. Export**
 
-The workspace provides a selection summary, output settings, execution logs, light/dark themes, and Chinese/English switching. Additional tools, including history curves, grain-level analysis, CPFEM processing, and safe recovery, are accessible from the menus.
+The workspace provides a selection summary, output settings, execution logs, light/dark themes, and Chinese/English switching. The left **Workspace** navigation provides **Data Export, Curve Data, Field Analysis, Friction CPFEM, and Audit & Recovery**. The source, state, fields, output and export flow remains within the Data Export page.
 
 ![ODB2VTU-S exporter interface](docs/images/odb2vtu-s-exporter.png)
 
@@ -33,14 +33,14 @@ The workspace provides a selection summary, output settings, execution logs, lig
 
 ## Download and requirements
 
-**[Download v1.0.0](https://github.com/yline0829/ODB2VTU-S/releases/tag/v1.0.0)**
+**[Download latest release](https://github.com/yline0829/ODB2VTU-S/releases/latest)**
 
 | Platform | Package | Requirements |
 | --- | --- | --- |
-| Windows | `ODB2VTU-S_Windows_v1.0.0.zip` | Windows, PowerShell/.NET, licensed Abaqus |
-| Linux | `ODB2VTU-S_Workbench_Linux_v1.0.0.zip` or `.tar.gz` | Python 3 + Tkinter; designed for CentOS 7, SingularityCE, Abaqus 2024 |
+| Windows | Windows EXE (`odb2vtu.exe`) / latest Release asset | Windows, PowerShell/.NET, licensed Abaqus |
+| Linux | Linux ZIP / latest Release asset | Python 3 + Tkinter; designed for CentOS 7, SingularityCE, Abaqus 2024 |
 
-The Windows package contains the original **user-tested EXE**; Linux installation, packaging, and syntax were checked independently. Running ODB operations requires your own licensed Abaqus installation with `odbAccess`. Back up important datasets before in-place updates or ODB write-back.
+The v1.0.1 Windows executable contains a new UI while preserving the earlier embedded calculation resources; Linux packaging and syntax were checked independently. The new Windows UI has not been independently run against production ODB datasets in this update. Running ODB operations requires your own licensed Abaqus installation with `odbAccess`. Back up important datasets before in-place updates or ODB write-back.
 
 [Windows guide](docs/install-windows.md) · [Linux guide](docs/install-linux.md) · [Incremental export](docs/incremental-export.md) · [PEEQCP](docs/peeqcp.md) · [v1.0.0 provenance](docs/validated-v1.0.0.md)
 

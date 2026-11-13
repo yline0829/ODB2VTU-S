@@ -11,6 +11,8 @@
 
 ODB2VTU-S is a Windows/Linux workbench for extracting selected results from large Abaqus ODB files and preparing ParaView visualizations and CPFEM analyses.
 
+**Development update (v1.0.1):** The Linux Workbench now has redesigned navigation, page layout and bilingual UI text. The ODB/VTU computation backend and original user-tested Windows executable are unchanged. The published v1.0.0 packages remain available until the new release is published.
+
 ## Unified Workbench
 
 The Windows interface follows a five-step workflow:

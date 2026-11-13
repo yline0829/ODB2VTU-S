@@ -17,7 +17,7 @@ DESKTOP_FILE="$APPS/odb2vtu-s-workbench.desktop"
 
 if [ ! -s "$ICON" ]; then
   echo "ERROR: installed ODB2VTU-S icon not found: $ICON" >&2
-  echo "Please run install_clickable.sh from the v1.0.0 package first." >&2
+  echo "Please run install_clickable.sh from the v1.0.1 package first." >&2
   exit 2
 fi
 
@@ -121,6 +121,6 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -f -t "$ICON_THEME" >/dev/null 2>&1 || true
 fi
 
-echo "ODB2VTU-S desktop icon repaired for v1.0.0."
+echo "ODB2VTU-S desktop icon repaired for v1.0.1."
 echo "Desktop : $SHORTCUT"
 echo "Icon    : $ICON"

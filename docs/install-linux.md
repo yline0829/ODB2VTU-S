@@ -1,6 +1,8 @@
 # ODB2VTU-S — Linux 安装与 Abaqus 环境
 
-ODB2VTU-S v1.0.0 Linux 版采用系统 Python 3 + Tkinter 作为 GUI，ODB 读写后端通过用户本机的 Abaqus Python 执行。
+ODB2VTU-S v1.0.1 Linux 版采用系统 Python 3 + Tkinter 作为 GUI，ODB 读写后端通过用户本机的 Abaqus Python 执行。
+
+**v1.0.1 说明：** Linux 工作台更新了界面布局与中英文文本，ODB/VTU 处理后端与 v1.0.0 保持一致。下文列出的 v1.0.0 安装包与校验值属于历史发布，更新后的 v1.0.1 ZIP 以相应 Release 附件为准。
 
 ## 适配环境
 

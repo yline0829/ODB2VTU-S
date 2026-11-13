@@ -151,7 +151,7 @@ fi
 rm -f "$APPS/odb2vtu-s-exporter.desktop" "$APPS/odb2vtu-s-cpfem-postprocessor.desktop"
 rm -f "$DESKTOP_DIR/ODB2VTU-S Exporter.desktop" "$DESKTOP_DIR/ODB2VTU-S CPFEM Postprocessor.desktop"
 
-echo "Installed unified ODB2VTU-S Workbench v1.0.0"
+echo "Installed unified ODB2VTU-S Workbench v1.0.1"
 echo "Install root : $PREFIX"
 echo "Desktop icon  : $DESKTOP_SHORTCUT"
 echo "Menu entry    : $DESKTOP_FILE"

@@ -15,6 +15,7 @@ import queue
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from tkinter import font as tkfont
 from ui_i18n import translate
 
 APP_DIR = Path(__file__).resolve().parent
@@ -59,12 +60,369 @@ ALL_GRAINS = '<所有晶粒 / All Grains>'
 WHOLE = '<整个实例 / Whole Instance>'
 COF = 'COF=|RF1|/|CF2|'
 
+# ---------------------------------------------------------------------------
+# Flat desktop theme. Tk 8.5 compatible: no rounded corners, no letter-spacing,
+# no PNG assets; icons are drawn on small canvases.
+# ---------------------------------------------------------------------------
+BG = '#FFFFFF'
+SIDEBAR_BG = '#F7F7F8'
+SIDEBAR_HOVER = '#EFEFF2'
+BORDER = '#E4E5E9'
+TEXT = '#14161A'
+MUTED = '#6B7280'
+FAINT = '#9AA0A8'
+ACCENT = '#0F6B5C'
+ACCENT_HOVER = '#0B5749'
+ACCENT_SUBTLE = '#E8F1EF'
+DANGER = '#B3261E'
+DANGER_SUBTLE = '#FBEAE8'
+
+_FONT_REFS = []
+_UI_FAMILIES = ('Microsoft YaHei UI', 'Segoe UI', 'Noto Sans CJK SC',
+                'Source Han Sans SC', 'WenQuanYi Micro Hei', 'DejaVu Sans',
+                'Liberation Sans', 'Helvetica')
+_MONO_FAMILIES = ('Cascadia Mono', 'Consolas', 'DejaVu Sans Mono',
+                  'Liberation Mono', 'Noto Sans Mono CJK SC', 'Courier New')
+
+
+def auto_wrap(label, margin=0, minimum=160):
+    """Keep a hint label wrapped to the current width of its container."""
+    parent = label.master
+
+    def _apply(_event=None):
+        width = parent.winfo_width() - margin
+        if width >= minimum:
+            label.configure(wraplength=width)
+
+    parent.bind('<Configure>', _apply, add='+')
+    label.after_idle(_apply)
+    return label
+
+
+def _pick_family(root, candidates):
+    try:
+        available = set(tkfont.families(root))
+    except Exception:
+        available = set()
+    for name in candidates:
+        if name in available:
+            return name
+    try:
+        return tkfont.nametofont('TkDefaultFont', root=root).actual('family')
+    except Exception:
+        return 'DejaVu Sans'
+
+
+def init_theme_fonts(root):
+    """Create named fonts once and align the Tk defaults with them."""
+    ui = _pick_family(root, _UI_FAMILIES)
+    mono = _pick_family(root, _MONO_FAMILIES)
+    specs = (
+        ('AppFont', ui, 10, 'normal'),
+        ('AppFontBold', ui, 10, 'bold'),
+        ('AppSmall', ui, 9, 'normal'),
+        ('AppSmallBold', ui, 9, 'bold'),
+        ('AppTiny', ui, 8, 'normal'),
+        ('AppMark', ui, 13, 'bold'),
+        ('AppTitle', ui, 17, 'bold'),
+        ('AppSubtitle', ui, 10, 'normal'),
+        ('AppSection', ui, 11, 'bold'),
+        ('AppNav', ui, 10, 'normal'),
+        ('AppNavActive', ui, 10, 'bold'),
+        ('AppTag', ui, 8, 'bold'),
+        ('AppMono', mono, 9, 'normal'),
+    )
+    for name, family, size, weight in specs:
+        try:
+            font = tkfont.Font(root=root, name=name, exists=True)
+        except Exception:
+            font = tkfont.Font(root=root, name=name, exists=False)
+        font.configure(family=family, size=size, weight=weight)
+        _FONT_REFS.append(font)
+    for name in ('TkDefaultFont', 'TkTextFont', 'TkMenuFont', 'TkTooltipFont',
+                 'TkIconFont', 'TkSmallCaptionFont'):
+        try:
+            tkfont.nametofont(name, root=root).configure(family=ui, size=10)
+        except Exception:
+            pass
+    for name in ('TkHeadingFont', 'TkCaptionFont'):
+        try:
+            tkfont.nametofont(name, root=root).configure(family=ui, size=10,
+                                                         weight='bold')
+        except Exception:
+            pass
+
+
+class Section(ttk.Frame):
+    """Titled form block: bold title, hairline rule, then the form rows.
+
+    Drop-in replacement for ttk.LabelFrame. Children are packed into this
+    frame directly, exactly like the previous LabelFrame call sites.
+    """
+
+    def __init__(self, master=None, text='', padding=0, **kwargs):
+        ttk.Frame.__init__(self, master, style='Section.TFrame',
+                           padding=padding, **kwargs)
+        self.title_label = tk.Label(self, text=text, bg=BG, fg=TEXT,
+                                    font='AppSection', anchor='w')
+        self.title_label.pack(fill='x')
+        tk.Frame(self, bg=BORDER, height=1).pack(fill='x', pady=(6, 9))
+
+
+class Check(tk.Frame):
+    """Flat checkbox that matches the theme on Tk 8.5/8.6.
+
+    ttk/clam renders its checkbox indicator from fixed images which look like a
+    stray cross on both CentOS 7 and Windows, so the box is drawn on a canvas.
+    """
+
+    def __init__(self, master=None, text='', variable=None, command=None,
+                 state='normal', **kwargs):
+        tk.Frame.__init__(self, master, bg=BG, **kwargs)
+        self.variable = variable if variable is not None else tk.BooleanVar(master=self)
+        self.command = command
+        self._state = state
+        self._hovering = False
+        self._box = tk.Canvas(self, width=15, height=15, bg=BG,
+                              highlightthickness=0, cursor='hand2')
+        self._box.pack(side='left')
+        self._label = tk.Label(self, text=text, bg=BG, fg=TEXT, font='AppFont',
+                               anchor='w', cursor='hand2')
+        self._label.pack(side='left', padx=(5, 0))
+        for widget in (self._box, self._label):
+            widget.bind('<Button-1>', self._toggle)
+            widget.bind('<Enter>', lambda event: self._hover(True))
+            widget.bind('<Leave>', lambda event: self._hover(False))
+        try:
+            self.variable.trace_add('write', lambda *args: self._draw())
+        except AttributeError:
+            self.variable.trace('w', lambda *args: self._draw())
+        self._draw()
+
+    def configure(self, cnf=None, **kwargs):
+        if 'state' in kwargs:
+            self._state = kwargs.pop('state')
+            self._draw()
+        if cnf is not None:
+            return tk.Frame.configure(self, cnf, **kwargs)
+        if kwargs:
+            return tk.Frame.configure(self, **kwargs)
+        return None
+
+    config = configure
+
+    def _hover(self, on):
+        self._hovering = on
+        self._draw()
+
+    def _toggle(self, _event=None):
+        if self._state == 'disabled':
+            return 'break'
+        self.variable.set(not bool(self.variable.get()))
+        if self.command is not None:
+            self.command()
+        return 'break'
+
+    def _draw(self):
+        c = self._box
+        c.delete('all')
+        disabled = self._state == 'disabled'
+        on = bool(self.variable.get())
+        if on:
+            fill = '#A7C4BE' if disabled else ACCENT
+            c.create_rectangle(0, 0, 14, 14, fill=fill, outline=fill)
+            c.create_line(3, 7, 6, 10, 11, 4, fill='#FFFFFF', width=2)
+        else:
+            fill = '#F4F5F7' if disabled else '#FFFFFF'
+            outline = BORDER if disabled else ('#B9BCC4' if self._hovering else '#C9CBD2')
+            c.create_rectangle(0, 0, 14, 14, fill=fill, outline=outline)
+        self._label.configure(fg=FAINT if disabled else TEXT,
+                              cursor='arrow' if disabled else 'hand2')
+
+
+class PageStack(tk.Frame):
+    """One visible page at a time; exposes the ttk.Notebook subset App uses."""
+
+    def __init__(self, master=None, **kwargs):
+        tk.Frame.__init__(self, master, bg=BG, **kwargs)
+        self._pages = []
+        self._titles = {}
+        self._current = None
+        self._callback = None
+        self.rowconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1)
+
+    def add(self, page, text=None):
+        if text is not None:
+            self._titles[page] = text
+        if page not in self._pages:
+            self._pages.append(page)
+            page.grid(row=0, column=0, sticky='nsew')
+        if self._current is None:
+            self.select(page)
+        else:
+            self._current.tkraise()
+        return page
+
+    def hide(self, page):
+        # The sidebar exposes every workspace page permanently.
+        return None
+
+    def select(self, page):
+        if page not in self._pages:
+            self.add(page)
+        self._current = page
+        page.tkraise()
+        if self._callback is not None:
+            self._callback(page)
+
+    def current(self):
+        return self._current
+
+    def set_on_change(self, callback):
+        self._callback = callback
+
+    def tab(self, page, option=None, text=None):
+        if text is not None:
+            self._titles[page] = text
+        if option in (None, 'text'):
+            return self._titles.get(page, '')
+        return ''
+
+
+class SideNav(tk.Frame):
+    """Left navigation rail with hand-drawn vector icons and an active bar."""
+
+    def __init__(self, master=None, stack=None, items=None, **kwargs):
+        tk.Frame.__init__(self, master, bg=SIDEBAR_BG, **kwargs)
+        self.stack = stack
+        self.items = list(items or [])
+        self._rows = {}
+        self._active = None
+        self._build_brand()
+        self._build_items()
+        self._build_footer()
+
+    def _build_brand(self):
+        brand = tk.Frame(self, bg=SIDEBAR_BG)
+        brand.pack(fill='x', padx=20, pady=(22, 26))
+        mark = tk.Canvas(brand, width=30, height=30, bg=SIDEBAR_BG,
+                         highlightthickness=0)
+        mark.create_rectangle(0, 0, 30, 30, fill=ACCENT, outline=ACCENT)
+        mark.create_text(15, 16, text='O', fill='#FFFFFF', font='AppMark')
+        mark.pack(side='left')
+        names = tk.Frame(brand, bg=SIDEBAR_BG)
+        names.pack(side='left', padx=(10, 0))
+        tk.Label(names, text='ODB2VTU-S', bg=SIDEBAR_BG, fg=TEXT,
+                 font='AppFontBold', anchor='w').pack(fill='x')
+        tk.Label(names, text='Workbench', bg=SIDEBAR_BG, fg=MUTED,
+                 font='AppTiny', anchor='w').pack(fill='x')
+
+    def _build_items(self):
+        tk.Label(self, text='工作区 / WORKSPACE', bg=SIDEBAR_BG, fg=FAINT,
+                 font='AppTag', anchor='w').pack(fill='x', padx=23, pady=(0, 8))
+        for page, label, kind in self.items:
+            self._add_row(page, label, kind)
+
+    def _build_footer(self):
+        foot = tk.Frame(self, bg=SIDEBAR_BG)
+        foot.pack(side='bottom', fill='x', padx=20, pady=14)
+        tk.Label(foot, text='v1.0.1', bg=SIDEBAR_BG, fg=TEXT,
+                 font='AppSmallBold', anchor='w').pack(fill='x')
+        tk.Label(foot, text='Linux · CentOS 7 · Tk', bg=SIDEBAR_BG, fg=FAINT,
+                 font='AppTiny', anchor='w').pack(fill='x', pady=(2, 0))
+        tk.Frame(self, bg=BORDER, height=1).pack(side='bottom', fill='x', padx=20)
+        tk.Frame(self, bg=SIDEBAR_BG).pack(fill='both', expand=True)
+
+    def _add_row(self, page, label, kind):
+        holder = tk.Frame(self, bg=SIDEBAR_BG, cursor='hand2')
+        holder.pack(fill='x')
+        bar = tk.Frame(holder, bg=SIDEBAR_BG, width=3)
+        bar.pack(side='left', fill='y')
+        body = tk.Frame(holder, bg=SIDEBAR_BG, cursor='hand2')
+        body.pack(side='left', fill='both', expand=True)
+        icon = tk.Canvas(body, width=18, height=18, bg=SIDEBAR_BG,
+                         highlightthickness=0, cursor='hand2')
+        icon.pack(side='left', padx=(11, 10), pady=10)
+        text = tk.Label(body, text=label, bg=SIDEBAR_BG, fg=MUTED,
+                        font='AppNav', anchor='w', cursor='hand2')
+        text.pack(side='left', fill='x', expand=True, pady=10)
+        row = {'page': page, 'holder': holder, 'bar': bar, 'body': body,
+               'icon': icon, 'label': text, 'kind': kind}
+        self._rows[page] = row
+        for widget in (holder, body, icon, text):
+            widget.bind('<Button-1>', lambda event, p=page: self._navigate(p))
+            widget.bind('<Enter>', lambda event, r=row: self._hover(r, True))
+            widget.bind('<Leave>', lambda event, r=row: self._leave(event, r))
+        self._paint(row, False, False)
+
+    def _navigate(self, page):
+        if self.stack is not None:
+            self.stack.select(page)
+
+    def _hover(self, row, on):
+        if self._active is row['page']:
+            return
+        self._paint(row, False, on)
+
+    def _leave(self, event, row):
+        widget = row['holder'].winfo_containing(event.x_root, event.y_root)
+        while widget is not None:
+            if widget is row['holder']:
+                return
+            widget = getattr(widget, 'master', None)
+        self._hover(row, False)
+
+    def _paint(self, row, active, hover=False):
+        bg = ACCENT_SUBTLE if active else (SIDEBAR_HOVER if hover else SIDEBAR_BG)
+        fg = ACCENT if active else ('#3F4650' if hover else '#4B5563')
+        for key in ('holder', 'body', 'icon', 'label'):
+            row[key].configure(bg=bg)
+        row['bar'].configure(bg=ACCENT if active else bg)
+        row['label'].configure(fg=fg,
+                               font='AppNavActive' if active else 'AppNav')
+        self._draw_icon(row['icon'], row['kind'], fg)
+
+    def set_active(self, page):
+        self._active = page
+        for key, row in self._rows.items():
+            self._paint(row, key is page, False)
+
+    @staticmethod
+    def _draw_icon(canvas, kind, color):
+        c = canvas
+        c.delete('all')
+        if kind == 'export':
+            c.create_rectangle(2, 8, 16, 16, outline=color)
+            c.create_line(9, 12, 9, 2, fill=color)
+            c.create_line(6, 5, 9, 2, fill=color)
+            c.create_line(12, 5, 9, 2, fill=color)
+        elif kind == 'curve':
+            c.create_line(2, 2, 2, 16, 16, 16, fill=color)
+            c.create_line(4, 13, 7, 8, 11, 10, 15, 4, fill=color)
+        elif kind == 'analysis':
+            c.create_line(2, 16, 16, 16, fill=color)
+            c.create_rectangle(4, 10, 7, 15, outline=color)
+            c.create_rectangle(8, 6, 11, 15, outline=color)
+            c.create_rectangle(12, 3, 15, 15, outline=color)
+        elif kind == 'cpfem':
+            c.create_oval(4, 4, 14, 14, outline=color)
+            c.create_oval(7, 7, 11, 11, outline=color)
+            for x1, y1, x2, y2 in ((9, 0, 9, 3), (9, 15, 9, 18),
+                                   (0, 9, 3, 9), (15, 9, 18, 9)):
+                c.create_line(x1, y1, x2, y2, fill=color)
+        else:  # safety shield
+            c.create_polygon(9, 1, 15, 4, 15, 9, 9, 17, 3, 9, 3, 4,
+                             fill='', outline=color)
+            c.create_line(6, 9, 8, 11, 12, 6, fill=color)
+
+
 class App(tk.Tk):
     def __init__(self):
         # WM_CLASS must match StartupWMClass in the .desktop entry, otherwise
         # GNOME shows a second, generic Tk launcher while the window is open.
         super().__init__(className='odb2vtu-s-workbench')
-        self.title('ODB2VTU-S Workbench v1.0.0 — Linux')
+        self.title('ODB2VTU-S Workbench v1.0.1 — Linux')
         self.geometry('1320x820')
         self.minsize(1080, 700)
         self.lang = 'zh'
@@ -101,30 +459,97 @@ class App(tk.Tk):
         self.cleanup_removed_var = tk.BooleanVar(value=False)
 
         self._style()
-        self._build_topbar()
-        self.nb = ttk.Notebook(self)
-        self.nb.pack(fill='both', expand=True, padx=6, pady=(0,6))
-        self.export_tab = ttk.Frame(self.nb)
-        self.curve_tab = ttk.Frame(self.nb)
-        self.analysis_tab = ttk.Frame(self.nb)
-        self.cpfem_tab = ttk.Frame(self.nb)
-        self.safety_tab = ttk.Frame(self.nb)
-        self.nb.add(self.export_tab, text='ODB → VTU / PVD')
+        self._build_shell()
+        self.nb = self.content
+        self.export_tab = ttk.Frame(self.content)
+        self.curve_tab = ttk.Frame(self.content)
+        self.analysis_tab = ttk.Frame(self.content)
+        self.cpfem_tab = ttk.Frame(self.content)
+        self.safety_tab = ttk.Frame(self.content)
+        self.nb.add(self.export_tab, text='数据导出 / Data Export')
         self.nb.add(self.curve_tab, text='曲线数据 / Curve Data')
         self.nb.add(self.analysis_tab, text='场变量分析 / Field Analysis')
         self.nb.add(self.cpfem_tab, text='摩擦 CPFEM / PEEQCP')
-        self.nb.add(self.safety_tab, text='数据诊断与安全恢复')
+        self.nb.add(self.safety_tab, text='数据诊断与安全恢复 / Audit & Recovery')
         self._build_export_tab()
         self._build_curve_tab()
         self._build_analysis_tab()
         self._build_cpfem_tab()
         self._build_safety_tab()
+        self._build_sidebar()
         self._build_app_menu()
         self._snapshot_ui_labels()
         self._apply_language()
-        for tab in (self.curve_tab, self.analysis_tab, self.cpfem_tab, self.safety_tab):
-            self.nb.hide(tab)
         self.after(100, self._drain_queue)
+
+    def _build_shell(self):
+        self.status_var = tk.StringVar(value='就绪')
+        self.page_meta = {}
+        self.sidenav = None
+        outer = tk.Frame(self, bg=BG)
+        outer.pack(fill='both', expand=True)
+        self.sidebar = tk.Frame(outer, bg=SIDEBAR_BG, width=236)
+        self.sidebar.pack(side='left', fill='y')
+        self.sidebar.pack_propagate(False)
+        self.main = tk.Frame(outer, bg=BG)
+        self.main.pack(side='left', fill='both', expand=True)
+        self._build_topbar()
+        self._build_statusbar()
+        self.content = PageStack(self.main)
+        self.content.pack(fill='both', expand=True)
+
+    def _build_statusbar(self):
+        bar = tk.Frame(self.main, bg=BG)
+        bar.pack(side='bottom', fill='x')
+        tk.Frame(bar, bg=BORDER, height=1).pack(side='top', fill='x')
+        inner = tk.Frame(bar, bg=BG)
+        inner.pack(fill='x', padx=26, pady=7)
+        dot = tk.Canvas(inner, width=8, height=8, bg=BG, highlightthickness=0)
+        dot.create_oval(1, 1, 7, 7, fill=ACCENT, outline=ACCENT)
+        dot.pack(side='left', padx=(0, 7))
+        tk.Label(inner, textvariable=self.status_var, bg=BG, fg=MUTED,
+                 font='AppSmall', anchor='w').pack(side='left')
+        tk.Label(inner, text='ODB2VTU-S  v1.0.1  ·  Linux', bg=BG, fg=FAINT,
+                 font='AppSmall', anchor='e').pack(side='right')
+
+    def _build_sidebar(self):
+        items = [
+            (self.export_tab, '数据导出 / Export', 'export'),
+            (self.curve_tab, '曲线数据 / Curve Data', 'curve'),
+            (self.analysis_tab, '场变量分析 / Field Analysis', 'analysis'),
+            (self.cpfem_tab, '摩擦 CPFEM 后处理 / Friction CPFEM', 'cpfem'),
+            (self.safety_tab, '诊断与恢复 / Audit & Recovery', 'safety'),
+        ]
+        self.page_meta = {
+            self.export_tab: ('数据导出', 'Data export',
+                              '将 Abaqus ODB 场变量导出为 VTU / PVD 时间序列',
+                              'Export Abaqus ODB field output to VTU / PVD time series'),
+            self.curve_tab: ('曲线数据', 'Curve data',
+                             '提取 History 曲线并导出 CSV',
+                             'Extract history curves and export CSV'),
+            self.analysis_tab: ('场变量分析', 'Field analysis',
+                                '晶粒排序、极值带与区域统计',
+                                'Grain ranking, extreme bands and regional statistics'),
+            self.cpfem_tab: ('摩擦 CPFEM 后处理', 'Friction CPFEM',
+                             '逐帧累积 PEEQCP 并安全写回 ODB',
+                             'Accumulate PEEQCP per frame and write back safely'),
+            self.safety_tab: ('诊断与安全恢复', 'Audit & recovery',
+                              '只读诊断、无损迁移与独立目录恢复',
+                              'Read-only audit, lossless migration and safe recovery'),
+        }
+        self.sidenav = SideNav(self.sidebar, stack=self.content, items=items)
+        self.sidenav.pack(fill='both', expand=True)
+        self.content.set_on_change(self._on_page_change)
+        self._on_page_change(self.content.current())
+
+    def _on_page_change(self, page):
+        meta = self.page_meta.get(page) if hasattr(self, 'page_meta') else None
+        if meta is not None:
+            zh = self.lang == 'zh'
+            self.page_title_var.set(meta[0] if zh else meta[1])
+            self.page_sub_var.set(meta[2] if zh else meta[3])
+        if getattr(self, 'sidenav', None) is not None:
+            self.sidenav.set_active(page)
 
     def _build_app_menu(self):
         # Rebuild the Tk native menu on language changes; callbacks remain unchanged.
@@ -172,8 +597,8 @@ class App(tk.Tk):
         for tab, original in self._tab_source_labels.items():
             self.nb.tab(tab, text=translate(original, self.lang))
         self._build_app_menu()
-        self.title('ODB2VTU-S 统一工作台 v1.0.0 — Linux' if self.lang == 'zh'
-                   else 'ODB2VTU-S Workbench v1.0.0 — Linux')
+        self.title('ODB2VTU-S 统一工作台 v1.0.1 — Linux' if self.lang == 'zh'
+                   else 'ODB2VTU-S Workbench v1.0.1 — Linux')
         if getattr(self, 'language_var', None) is not None:
             self.language_var.set('中文' if self.lang == 'zh' else 'English')
         # Display-only combobox text; backend uses stable selected indices.
@@ -194,6 +619,10 @@ class App(tk.Tk):
             widget.current(max(index, 0))
         if self.cpfem_status.get() in ('Waiting / 等待操作','等待操作','Waiting'):
             self.cpfem_status.set(translate('Waiting / 等待操作', self.lang))
+        if self.status_var.get() in ('就绪', 'Ready'):
+            self.status_var.set('就绪' if self.lang == 'zh' else 'Ready')
+        if getattr(self, 'content', None) is not None:
+            self._on_page_change(self.content.current())
 
     def _m(self, chinese, english):
         return chinese if self.lang == 'zh' else english
@@ -206,32 +635,41 @@ class App(tk.Tk):
             self._apply_language()
 
     def open_work_page(self, tab):
-        self.nb.add(tab)
         self.nb.select(tab)
 
     def _build_cpfem_tab(self):
         parent = self.cpfem_tab
-        f = ttk.Frame(parent, padding=14)
-        f.pack(fill='both', expand=True)
+        f = tk.Frame(parent, bg=BG)
+        f.pack(fill='both', expand=True, padx=24, pady=(16, 10))
         self.cpfem_odb = tk.StringVar()
         self.cpfem_out = tk.StringVar()
         self.cpfem_status = tk.StringVar(value='Waiting / 等待操作')
-        r = ttk.Frame(f); r.pack(fill='x', pady=4)
+        src = Section(f, text='数据源 / Source'); src.pack(fill='x', pady=(0,10))
+        r = ttk.Frame(src); r.pack(fill='x', pady=3)
         ttk.Label(r, text='摩擦 ODB / Source ODB', width=24).pack(side='left')
         ttk.Entry(r, textvariable=self.cpfem_odb).pack(side='left', fill='x', expand=True)
-        ttk.Button(r, text='浏览...', command=self._cpfem_pick).pack(side='left', padx=5)
-        r = ttk.Frame(f); r.pack(fill='x', pady=4)
+        ttk.Button(r, text='浏览...', command=self._cpfem_pick).pack(side='left', padx=(8,0))
+        r = ttk.Frame(src); r.pack(fill='x', pady=3)
         ttk.Label(r, text='输出文件夹 / Output root', width=24).pack(side='left')
         ttk.Entry(r, textvariable=self.cpfem_out).pack(side='left', fill='x', expand=True)
-        ttk.Button(r, text='浏览...', command=self._cpfem_pick_out).pack(side='left', padx=5)
-        ttk.Label(f, text='逐帧累积 PEEQCP，目标帧按各摩擦循环的 T0/T25/T50/T75/T100 选取。', wraplength=760).pack(anchor='w', pady=9)
-        buttons=ttk.Frame(f); buttons.pack(fill='x', pady=6)
-        actions=[('② 计算 PEEQCP', 'peeq_export'),('③ 写回 PEEQCP 到 ODB', 'peeq_inject'),('④ 检查 PEEQCP', 'peeq_check')]
-        for i,(label,op) in enumerate(actions):
-            ttk.Button(buttons, text=label, command=lambda op=op:self._cpfem_run(op)).grid(row=i//2,column=i%2,sticky='ew',padx=4,pady=4)
-        buttons.columnconfigure(0, weight=1); buttons.columnconfigure(1, weight=1)
-        ttk.Label(f,textvariable=self.cpfem_status).pack(anchor='w',pady=5)
-        self.cpfem_log = tk.Text(f, height=14, wrap='none'); self.cpfem_log.pack(fill='both',expand=True)
+        ttk.Button(r, text='浏览...', command=self._cpfem_pick_out).pack(side='left', padx=(8,0))
+
+        ops = Section(f, text='PEEQCP 操作 / Operations'); ops.pack(fill='x', pady=(0,10))
+        hint = ttk.Label(ops, text='逐帧累积 PEEQCP，目标帧按各摩擦循环的 T0/T25/T50/T75/T100 选取。',
+                         style='Muted.TLabel', justify='left')
+        hint.pack(anchor='w', pady=(0,10))
+        auto_wrap(hint)
+        buttons=ttk.Frame(ops); buttons.pack(fill='x')
+        ttk.Button(buttons, text='② 计算 PEEQCP', style='Primary.TButton',
+                   command=lambda:self._cpfem_run('peeq_export')).pack(side='left')
+        ttk.Button(buttons, text='③ 写回 PEEQCP 到 ODB', style='Danger.TButton',
+                   command=lambda:self._cpfem_run('peeq_inject')).pack(side='left', padx=8)
+        ttk.Button(buttons, text='④ 检查 PEEQCP',
+                   command=lambda:self._cpfem_run('peeq_check')).pack(side='left')
+        ttk.Label(ops, textvariable=self.cpfem_status, style='Muted.TLabel').pack(anchor='w', pady=(10,0))
+
+        logbox = Section(f, text='日志 / Log'); logbox.pack(fill='both', expand=True)
+        self.cpfem_log = tk.Text(logbox, height=6, wrap='none'); self.cpfem_log.pack(fill='both',expand=True)
 
     def curve_export_friction(self):
         # Existing, proven friction History exporter; one GUI entry under Curve Data.
@@ -274,30 +712,49 @@ class App(tk.Tk):
 
     def _build_safety_tab(self):
         parent=self.safety_tab
-        f=ttk.Frame(parent,padding=14);f.pack(fill='both',expand=True)
+        host,f=self._make_scrollable_pane(parent,padding=0)
+        host.pack(fill='both',expand=True,padx=24,pady=(16,8))
         self.safety_pvd=tk.StringVar()
         self.safety_fields=tk.StringVar(value='U,UR,SDV27,SDV49')
         self.safety_confirm=tk.BooleanVar(value=False)
-        ttk.Label(f,text='数据诊断与安全恢复 / Non-destructive Audit & Recovery',font=('',13,'bold')).pack(anchor='w',pady=(0,10))
-        r=ttk.Frame(f);r.pack(fill='x',pady=4)
+
+        target=Section(f,text='审计目标 / Target'); target.pack(fill='x',pady=(0,10))
+        r=ttk.Frame(target);r.pack(fill='x',pady=3)
         ttk.Label(r,text='PVD 文件',width=16).pack(side='left')
         ttk.Entry(r,textvariable=self.safety_pvd).pack(side='left',fill='x',expand=True)
-        ttk.Button(r,text='浏览...',command=self._safety_pick).pack(side='left',padx=5)
-        ttk.Button(f,text='1. 全量只读诊断（无需 ODB） / Full Audit',command=self._safety_audit).pack(anchor='w',pady=(8,15))
-        ttk.Label(f,text='从 ODB 补充的原生字段 / Missing native fields (comma separated)').pack(anchor='w')
-        ttk.Entry(f,textvariable=self.safety_fields).pack(fill='x',pady=5)
-        r=ttk.Frame(f);r.pack(fill='x',pady=8)
-        ttk.Button(r,text='2. ODB 预检查 / CHECK ONLY',command=lambda:self._safety_recovery('check')).pack(side='left',padx=5)
-        ttk.Button(r,text='3. 安全恢复到新目录 / RESTORE',command=lambda:self._safety_recovery('restore')).pack(side='left',padx=5)
-        ttk.Checkbutton(f,text='已备份并完成预检查；只在全新恢复目录写入 / Confirmed backup and precheck',variable=self.safety_confirm).pack(anchor='w',pady=7)
-        ttk.Label(f,text='原 ODB/VTU/PVD/Manifest 均保持只读，恢复结果写入 RECOVERED_SAFE；不得直接替换原目录。',wraplength=850,foreground='#a22').pack(anchor='w',pady=5)
-        sep=ttk.Separator(f,orient='horizontal');sep.pack(fill='x',pady=12)
-        ttk.Label(f,text='旧版无 Manifest 的 PVD/VTU 迁移 / Legacy baseline migration',font=('',11,'bold')).pack(anchor='w')
-        ttk.Label(f,text='需先在导出页面选好原始 ODB、实例和单元集。逐帧验证网格和原生场数值，然后复制到新 MIGRATED_SAFE 目录。',wraplength=850).pack(anchor='w',pady=4)
-        r=ttk.Frame(f);r.pack(fill='x',pady=6)
-        ttk.Button(r,text='4. 旧版只读预检查 / Legacy CHECK',command=lambda:self._legacy_migration('check')).pack(side='left',padx=5)
-        ttk.Button(r,text='5. 迁移至新目录 / Legacy MIGRATE',command=lambda:self._legacy_migration('migrate')).pack(side='left',padx=5)
-        self.safety_log=tk.Text(f,height=9,wrap='none');self.safety_log.pack(fill='both',expand=True,pady=7)
+        ttk.Button(r,text='浏览...',command=self._safety_pick).pack(side='left',padx=(8,0))
+        ttk.Label(target,text='从 ODB 补充的原生字段 / Missing native fields (comma separated)',
+                  style='Muted.TLabel').pack(anchor='w',pady=(10,4))
+        ttk.Entry(target,textvariable=self.safety_fields).pack(fill='x')
+        ttk.Button(target,text='1. 全量只读诊断（无需 ODB） / Full Audit',
+                   command=self._safety_audit).pack(anchor='w',pady=(10,0))
+
+        rec=Section(f,text='安全恢复 / Safe recovery'); rec.pack(fill='x',pady=(0,10))
+        rec_hint = ttk.Label(rec,text='原 ODB/VTU/PVD/Manifest 均保持只读，恢复结果写入独立的 RECOVERED_SAFE 目录，绝不直接替换原目录。',
+                             style='Muted.TLabel',justify='left')
+        rec_hint.pack(anchor='w',pady=(0,10))
+        auto_wrap(rec_hint)
+        r=ttk.Frame(rec);r.pack(fill='x')
+        ttk.Button(r,text='2. ODB 预检查 / CHECK ONLY',command=lambda:self._safety_recovery('check')).pack(side='left')
+        ttk.Button(r,text='3. 安全恢复到新目录 / RESTORE',style='Primary.TButton',
+                   command=lambda:self._safety_recovery('restore')).pack(side='right')
+        Check(rec,text='已备份并完成预检查；只在全新恢复目录写入 / Confirmed backup and precheck',
+                        variable=self.safety_confirm).pack(anchor='w',pady=(10,0))
+        tk.Label(rec,text='恢复过程不会修改原始结果；请务必先完成第 2 步预检查。',
+                 bg=BG,fg=DANGER,font='AppSmall',anchor='w').pack(fill='x',pady=(4,0))
+
+        leg=Section(f,text='旧版无 Manifest 的迁移 / Legacy migration'); leg.pack(fill='x',pady=(0,10))
+        leg_hint = ttk.Label(leg,text='需先在导出页面选好原始 ODB、实例和单元集。逐帧验证网格和原生场数值，然后复制到新的 MIGRATED_SAFE 目录。',
+                             style='Muted.TLabel',justify='left')
+        leg_hint.pack(anchor='w',pady=(0,10))
+        auto_wrap(leg_hint)
+        r=ttk.Frame(leg);r.pack(fill='x')
+        ttk.Button(r,text='4. 旧版只读预检查 / Legacy CHECK',command=lambda:self._legacy_migration('check')).pack(side='left')
+        ttk.Button(r,text='5. 迁移至新目录 / Legacy MIGRATE',style='Danger.TButton',
+                   command=lambda:self._legacy_migration('migrate')).pack(side='right')
+
+        logbox=Section(f,text='日志 / Log'); logbox.pack(fill='both',expand=True)
+        self.safety_log=tk.Text(logbox,height=8,wrap='none');self.safety_log.pack(fill='both',expand=True)
 
     def _safety_pick(self):
         p=filedialog.askopenfilename(filetypes=[('PVD','*.pvd')])
@@ -359,34 +816,182 @@ class App(tk.Tk):
         self.run_backend(args,self.safety_log,None,'Legacy migration '+mode)
 
     def _style(self):
+        init_theme_fonts(self)
+        self.configure(bg=BG)
         s = ttk.Style(self)
         try: s.theme_use('clam')
         except Exception: pass
-        s.configure('TButton', padding=(7,4))
-        s.configure('TNotebook.Tab', padding=(12,6))
+
+        s.configure('.', font='AppFont', background=BG, foreground=TEXT)
+        s.configure('TFrame', background=BG)
+        s.configure('Page.TFrame', background=BG)
+        s.configure('Section.TFrame', background=BG)
+        s.configure('TLabel', background=BG, foreground=TEXT)
+        s.configure('Muted.TLabel', background=BG, foreground=MUTED)
+        s.configure('Tag.TLabel', background=BG, foreground=FAINT, font='AppTag')
+        s.configure('Title.TLabel', background=BG, foreground=TEXT, font='AppTitle')
+
+        s.configure('TButton', font='AppFont', padding=(13, 7), relief='solid',
+                    borderwidth=1, background='#FFFFFF', foreground=TEXT,
+                    bordercolor=BORDER, lightcolor='#FFFFFF', darkcolor='#FFFFFF',
+                    focusthickness=0, focuscolor=BG)
+        s.map('TButton',
+              background=[('disabled', '#F4F5F7'), ('pressed', '#F1F2F4'),
+                          ('active', '#F7F7F8')],
+              foreground=[('disabled', FAINT)],
+              bordercolor=[('disabled', BORDER), ('active', '#C9CBD2')],
+              lightcolor=[('active', '#F7F7F8'), ('pressed', '#F1F2F4')],
+              darkcolor=[('active', '#F7F7F8'), ('pressed', '#F1F2F4')])
+        s.configure('SecondarySmall.TButton', font='AppSmall', padding=(10, 5))
+        s.configure('Small.TButton', font='AppSmall', padding=(6, 4))
+
+        s.configure('Primary.TButton', font='AppFontBold', padding=(18, 9),
+                    relief='flat', borderwidth=1, background=ACCENT,
+                    foreground='#FFFFFF', bordercolor=ACCENT,
+                    lightcolor=ACCENT, darkcolor=ACCENT,
+                    focusthickness=0, focuscolor=ACCENT)
+        s.map('Primary.TButton',
+              background=[('disabled', '#A7C4BE'), ('pressed', ACCENT_HOVER),
+                          ('active', ACCENT_HOVER)],
+              foreground=[('disabled', '#F2F6F5')],
+              bordercolor=[('disabled', '#A7C4BE'), ('pressed', ACCENT_HOVER),
+                           ('active', ACCENT_HOVER)],
+              lightcolor=[('pressed', ACCENT_HOVER), ('active', ACCENT_HOVER)],
+              darkcolor=[('pressed', ACCENT_HOVER), ('active', ACCENT_HOVER)])
+
+        s.configure('Danger.TButton', font='AppFont', padding=(13, 7),
+                    relief='solid', borderwidth=1, background='#FFFFFF',
+                    foreground=DANGER, bordercolor='#E7C6C2',
+                    lightcolor='#FFFFFF', darkcolor='#FFFFFF',
+                    focusthickness=0, focuscolor=BG)
+        s.map('Danger.TButton',
+              background=[('active', DANGER_SUBTLE), ('pressed', '#F6DCD8')],
+              bordercolor=[('active', DANGER)],
+              lightcolor=[('active', DANGER_SUBTLE)],
+              darkcolor=[('active', DANGER_SUBTLE)])
+
+        s.configure('TEntry', font='AppFont', fieldbackground='#FFFFFF',
+                    foreground=TEXT, background='#FFFFFF', bordercolor=BORDER,
+                    lightcolor='#FFFFFF', darkcolor='#FFFFFF', insertcolor=TEXT,
+                    padding=(7, 5), relief='flat', borderwidth=1)
+        s.map('TEntry', bordercolor=[('focus', ACCENT)],
+              lightcolor=[('focus', '#FFFFFF')],
+              darkcolor=[('focus', '#FFFFFF')])
+
+        s.configure('TCombobox', font='AppFont', fieldbackground='#FFFFFF',
+                    foreground=TEXT, background='#FFFFFF', bordercolor=BORDER,
+                    lightcolor='#FFFFFF', darkcolor='#FFFFFF', arrowcolor=MUTED,
+                    padding=(6, 4), relief='flat', borderwidth=1)
+        s.map('TCombobox',
+              fieldbackground=[('readonly', '#FFFFFF'), ('disabled', '#F4F5F7')],
+              foreground=[('disabled', FAINT)],
+              bordercolor=[('focus', ACCENT), ('active', '#C9CBD2')],
+              arrowcolor=[('active', ACCENT)],
+              lightcolor=[('focus', '#FFFFFF')],
+              darkcolor=[('focus', '#FFFFFF')])
+
+        s.configure('TCheckbutton', font='AppFont', background=BG,
+                    foreground=TEXT, focusthickness=0, focuscolor=BG,
+                    padding=(0, 2))
+        s.map('TCheckbutton', background=[('active', BG)],
+              foreground=[('disabled', FAINT)])
+        s.configure('TRadiobutton', font='AppFont', background=BG,
+                    foreground=TEXT, focusthickness=0, focuscolor=BG)
+        s.map('TRadiobutton', background=[('active', BG)])
+
+        s.configure('Vertical.TScrollbar', background='#E9EAEE', troughcolor=BG,
+                    bordercolor=BG, arrowcolor=MUTED, relief='flat',
+                    borderwidth=0, arrowsize=10)
+        s.map('Vertical.TScrollbar',
+              background=[('active', '#D5D7DD')],
+              arrowcolor=[('active', ACCENT)])
+        s.configure('Horizontal.TScrollbar', background='#E9EAEE',
+                    troughcolor=BG, bordercolor=BG, arrowcolor=MUTED,
+                    relief='flat', borderwidth=0)
+
+        s.configure('TSeparator', background=BORDER)
+        s.configure('TPanedwindow', background=BG)
+        try:
+            s.configure('Sash', sashthickness=2, gripcount=0, background=BG,
+                        bordercolor=BG, lightcolor=BG, darkcolor=BG)
+        except Exception:
+            pass
+        s.configure('TNotebook', background=BG, borderwidth=0)
+        s.configure('TNotebook.Tab', padding=(12, 6))
+
+        # tk.Listbox / tk.Text / tk.Canvas do not follow ttk styles; seed their
+        # appearance through the option database before any page is created.
+        for pattern, value in (
+                ('*Listbox.background', '#FFFFFF'),
+                ('*Listbox.foreground', TEXT),
+                ('*Listbox.selectBackground', ACCENT_SUBTLE),
+                ('*Listbox.selectForeground', ACCENT),
+                ('*Listbox.highlightThickness', 1),
+                ('*Listbox.highlightBackground', BORDER),
+                ('*Listbox.highlightColor', ACCENT),
+                ('*Listbox.borderWidth', 0),
+                ('*Listbox.relief', 'flat'),
+                ('*Listbox.activestyle', 'none'),
+                ('*Listbox.font', 'AppFont'),
+                ('*Text.background', '#FFFFFF'),
+                ('*Text.foreground', TEXT),
+                ('*Text.insertBackground', TEXT),
+                ('*Text.selectBackground', ACCENT_SUBTLE),
+                ('*Text.selectForeground', TEXT),
+                ('*Text.highlightThickness', 1),
+                ('*Text.highlightBackground', BORDER),
+                ('*Text.highlightColor', ACCENT),
+                ('*Text.borderWidth', 0),
+                ('*Text.relief', 'flat'),
+                ('*Text.font', 'AppMono'),
+                ('*Text.padx', 10),
+                ('*Text.pady', 8),
+                ('*TCombobox*Listbox.background', '#FFFFFF'),
+                ('*TCombobox*Listbox.foreground', TEXT),
+                ('*TCombobox*Listbox.selectBackground', ACCENT_SUBTLE),
+                ('*TCombobox*Listbox.selectForeground', ACCENT),
+                ('*TCombobox*Listbox.font', 'AppFont'),
+                ('*TCombobox*Listbox.borderWidth', 0)):
+            try: self.option_add(pattern, value)
+            except Exception: pass
 
     def _make_scrollable_pane(self, parent, padding=8):
         """Create a vertically scrollable pane compatible with CentOS 7 / Tk 8.5."""
-        host = ttk.Frame(parent)
-        canvas = tk.Canvas(host, highlightthickness=0, borderwidth=0)
-        scroll = ttk.Scrollbar(host, orient='vertical', command=canvas.yview)
+        host = tk.Frame(parent, bg=BG)
+        canvas = tk.Canvas(host, bg=BG, highlightthickness=0, borderwidth=0)
+        scroll = ttk.Scrollbar(host, orient='vertical', command=canvas.yview,
+                               style='Vertical.TScrollbar')
         canvas.configure(yscrollcommand=scroll.set)
-        scroll.pack(side='right', fill='y')
         canvas.pack(side='left', fill='both', expand=True)
 
-        inner = ttk.Frame(canvas, padding=padding)
+        inner = tk.Frame(canvas, bg=BG, padx=padding, pady=padding)
         window_id = canvas.create_window((0, 0), window=inner, anchor='nw')
 
         def _sync_region(event=None):
-            box = canvas.bbox('all')
-            if box:
-                canvas.configure(scrollregion=box)
+            view = max(1, canvas.winfo_height())
+            width = max(1, canvas.winfo_width())
+            need = inner.winfo_reqheight()
+            current = int(float(canvas.itemcget(window_id, 'height') or 0))
+            if need <= view:
+                if current != view:
+                    canvas.itemconfigure(window_id, height=view)
+                if scroll.winfo_ismapped():
+                    scroll.pack_forget()
+            else:
+                # Auto height so late layout changes cannot clip the last row.
+                if current != 0:
+                    canvas.itemconfigure(window_id, height=0)
+                if not scroll.winfo_ismapped():
+                    scroll.pack(side='right', fill='y', before=canvas)
+            canvas.configure(scrollregion=(0, 0, width, max(need, view)))
 
         def _sync_width(event):
-            canvas.itemconfigure(window_id, width=event.width)
+            canvas.itemconfigure(window_id, width=max(1, event.width - 12))
+            canvas.after_idle(_sync_region)
 
         inner.bind('<Configure>', _sync_region)
         canvas.bind('<Configure>', _sync_width)
+        host.bind('<Map>', lambda e: canvas.after_idle(_sync_region))
 
         # Linux/X11 mouse wheel support while the pointer is over this pane.
         # Do not hijack wheel events from interactive/scrollable child widgets:
@@ -431,142 +1036,186 @@ class App(tk.Tk):
         return host, inner
 
     def _build_topbar(self):
-        f = ttk.Frame(self, padding=(8,6))
-        f.pack(fill='x')
-        ttk.Label(f, text='Abaqus 命令 / Abaqus command:').pack(side='left')
-        ttk.Entry(f, textvariable=self.abaqus_cmd, width=22).pack(side='left', padx=(5,12))
-        ttk.Button(f, text='检查环境', command=self.check_env).pack(side='left')
-        ttk.Label(f, text='  默认: Singularity + Abaqus 2024').pack(side='left', padx=8)
+        header = tk.Frame(self.main, bg=BG)
+        header.pack(side='top', fill='x')
+        top = tk.Frame(header, bg=BG)
+        top.pack(fill='x', padx=26, pady=(20, 0))
+        self.page_title_var = tk.StringVar(value='数据导出')
+        self.page_sub_var = tk.StringVar(value='')
+        tk.Label(top, textvariable=self.page_title_var, bg=BG, fg=TEXT,
+                 font='AppTitle', anchor='w').pack(side='left')
+        tk.Label(top, text='ABAQUS 2024  ·  CENTOS 7', bg=BG, fg=FAINT,
+                 font='AppTag', anchor='e').pack(side='right')
+        tk.Label(header, textvariable=self.page_sub_var, bg=BG, fg=MUTED,
+                 font='AppSubtitle', anchor='w').pack(fill='x', padx=26, pady=(3, 0))
+
+        strip = tk.Frame(header, bg=BG)
+        strip.pack(fill='x', padx=26, pady=(14, 16))
+        tk.Label(strip, text='求解器 / SOLVER', bg=BG, fg=FAINT,
+                 font='AppTag').pack(side='left', padx=(0, 10))
+        ttk.Entry(strip, textvariable=self.abaqus_cmd).pack(
+            side='left', fill='x', expand=True)
+        ttk.Button(strip, text='检查环境 / Check', style='SecondarySmall.TButton',
+                   command=self.check_env).pack(side='left', padx=(8, 0))
+        tk.Label(strip, text='语言 / Language', bg=BG, fg=MUTED,
+                 font='AppSmall').pack(side='left', padx=(18, 8))
         self.language_var = tk.StringVar(value='中文')
-        self.language_cb = ttk.Combobox(f, textvariable=self.language_var, state='readonly',
-                                        values=('中文', 'English'), width=10)
-        self.language_cb.pack(side='right', padx=(6,4))
+        self.language_cb = ttk.Combobox(strip, textvariable=self.language_var,
+                                        state='readonly', values=('中文', 'English'),
+                                        width=9)
+        self.language_cb.pack(side='left')
         self.language_cb.bind('<<ComboboxSelected>>', self._change_language)
-        ttk.Label(f, text='语言 / Language').pack(side='right')
+        tk.Frame(self.main, bg=BORDER, height=1).pack(side='top', fill='x')
 
 
     def _build_export_tab(self):
         root = self.export_tab
-        pan = ttk.Panedwindow(root, orient='horizontal'); pan.pack(fill='both', expand=True)
-        left_host, left = self._make_scrollable_pane(pan, padding=8)
-        right_host, right = self._make_scrollable_pane(pan, padding=8)
-        pan.add(left_host, weight=3); pan.add(right_host, weight=5)
+        bar = tk.Frame(root, bg=BG)
+        bar.pack(side='bottom', fill='x', padx=24, pady=(0, 10))
+        tk.Frame(bar, bg=BORDER, height=1).pack(fill='x', pady=(0, 10))
+        actions = tk.Frame(bar, bg=BG); actions.pack(fill='x')
+        pan = ttk.Panedwindow(root, orient='horizontal'); pan.pack(fill='both', expand=True, padx=(24, 8), pady=(16, 0))
+        left_host, left = self._make_scrollable_pane(pan, padding=0)
+        right_host, right = self._make_scrollable_pane(pan, padding=0)
+        pan.add(left_host, weight=4); pan.add(right_host, weight=5)
 
-        src = ttk.LabelFrame(left, text='数据源 / Source', padding=8); src.pack(fill='x', pady=(0,7))
+        src = Section(left, text='数据源 / Source'); src.pack(fill='x', pady=(0,10))
         row = ttk.Frame(src); row.pack(fill='x')
         ttk.Entry(row, textvariable=self.odb_var).pack(side='left', fill='x', expand=True)
         ttk.Button(row, text='选择 ODB', command=self.browse_odb).pack(side='left', padx=(5,0))
         row2 = ttk.Frame(src); row2.pack(fill='x', pady=(5,0))
-        ttk.Button(row2, text='读取元数据', command=self.read_metadata).pack(side='left')
-        self.instance_cb = ttk.Combobox(row2, state='readonly', width=26); self.instance_cb.pack(side='left', padx=5)
+        row2.columnconfigure(1, weight=1); row2.columnconfigure(2, weight=1)
+        ttk.Button(row2, text='读取元数据', command=self.read_metadata).grid(row=0,column=0,sticky='w')
+        self.instance_cb = ttk.Combobox(row2, state='readonly'); self.instance_cb.grid(row=0,column=1,sticky='ew',padx=(5,5))
         self.instance_cb.bind('<<ComboboxSelected>>', lambda e:self.refresh_sets())
-        self.set_cb = ttk.Combobox(row2, state='readonly', width=34); self.set_cb.pack(side='left', padx=5)
+        self.set_cb = ttk.Combobox(row2, state='readonly'); self.set_cb.grid(row=0,column=2,sticky='ew')
 
-        out = ttk.LabelFrame(left, text='输出 / Output', padding=8); out.pack(fill='x', pady=(0,7))
+        out = Section(left, text='输出 / Output'); out.pack(fill='x', pady=(0,10))
         r = ttk.Frame(out); r.pack(fill='x')
-        ttk.Checkbutton(r, text='自动匹配 ODB/ODB2VTU_Output', variable=self.auto_out, command=self.refresh_output_path).pack(side='left')
+        Check(r, text='自动匹配 ODB/ODB2VTU_Output', variable=self.auto_out, command=self.refresh_output_path).pack(side='left')
         ttk.Button(r, text='选择输出文件夹', command=self.choose_output_dir).pack(side='left', padx=8)
         r2=ttk.Frame(out); r2.pack(fill='x', pady=(5,0))
         ttk.Entry(r2, textvariable=self.output_file).pack(side='left', fill='x', expand=True)
-        ttk.Button(r2, text='...', width=4, command=self.choose_output_file).pack(side='left', padx=(5,0))
+        ttk.Button(r2, text='...', width=3, style='Small.TButton', command=self.choose_output_file).pack(side='left', padx=(5,0))
 
-        state = ttk.LabelFrame(left, text='Step / Frame', padding=8); state.pack(fill='both', expand=True, pady=(0,7))
+        state = Section(left, text='Step / Frame'); state.pack(fill='both', expand=True, pady=(0,10))
         top = ttk.Frame(state); top.pack(fill='x')
-        ttk.Label(top,text='Step').pack(side='left')
-        self.step_cb=ttk.Combobox(top,state='readonly',width=30); self.step_cb.pack(side='left',padx=5)
+        top.columnconfigure(1, weight=1)
+        ttk.Label(top,text='Step').grid(row=0,column=0,sticky='w')
+        self.step_cb=ttk.Combobox(top,state='readonly',width=16)
+        self.step_cb.grid(row=0,column=1,sticky='ew',padx=(5,8))
         self.step_cb.bind('<<ComboboxSelected>>', lambda e:self.populate_frames())
-        ttk.Label(top,text='Frame').pack(side='left')
-        self.frame_cb=ttk.Combobox(top,state='readonly',width=12); self.frame_cb.pack(side='left',padx=5)
-        ttk.Checkbutton(top,text='PVD时间序列',variable=self.series_var,command=self._series_toggle).pack(side='left',padx=8)
+        ttk.Label(top,text='Frame').grid(row=0,column=2,sticky='w')
+        self.frame_cb=ttk.Combobox(top,state='readonly',width=6)
+        self.frame_cb.grid(row=0,column=3,sticky='ew',padx=(5,8))
+        Check(top,text='PVD时间序列',variable=self.series_var,command=self._series_toggle).grid(row=0,column=4,sticky='w')
 
         sf=ttk.Frame(state); sf.pack(fill='both', expand=True, pady=(6,0))
-        a=ttk.Frame(sf); a.pack(side='left',fill='both',expand=True)
-        ttk.Label(a,text='Steps（Ctrl/Shift多选）').pack(anchor='w')
-        self.series_steps=tk.Listbox(a,selectmode='extended',height=7,exportselection=False); self.series_steps.pack(fill='both',expand=True)
+        for _col in range(3):
+            sf.columnconfigure(_col, weight=1, uniform='states')
+        sf.rowconfigure(1, weight=1)
+        ttk.Label(sf,text='Steps（Ctrl/Shift多选）').grid(row=0,column=0,sticky='w')
+        ttk.Label(sf,text='公共Frame索引').grid(row=0,column=1,sticky='w',padx=(6,6))
+        ttk.Label(sf,text='已选 Step/Frame').grid(row=0,column=2,sticky='w')
+        self.series_steps=tk.Listbox(sf,selectmode='extended',height=5,exportselection=False,width=10)
+        self.series_steps.grid(row=1,column=0,sticky='nsew',pady=(2,0))
         self.series_steps.bind('<<ListboxSelect>>', lambda e:self.populate_common_frames())
-        b=ttk.Frame(sf); b.pack(side='left',fill='both',expand=True,padx=6)
-        ttk.Label(b,text='公共Frame索引').pack(anchor='w')
-        self.common_frames=tk.Listbox(b,selectmode='extended',height=7,exportselection=False); self.common_frames.pack(fill='both',expand=True)
-        c=ttk.Frame(sf); c.pack(side='left',fill='both',expand=True)
-        ttk.Label(c,text='已选 Step/Frame').pack(anchor='w')
-        self.states_list=tk.Listbox(c,selectmode='extended',height=7,exportselection=False); self.states_list.pack(fill='both',expand=True)
+        self.common_frames=tk.Listbox(sf,selectmode='extended',height=5,exportselection=False,width=10)
+        self.common_frames.grid(row=1,column=1,sticky='nsew',pady=(2,0),padx=(6,6))
+        self.states_list=tk.Listbox(sf,selectmode='extended',height=5,exportselection=False,width=10)
+        self.states_list.grid(row=1,column=2,sticky='nsew',pady=(2,0))
         buttons=ttk.Frame(state); buttons.pack(fill='x',pady=(5,0))
-        ttk.Button(buttons,text='添加所选帧',command=lambda:self.add_series_frames(False)).pack(side='left')
-        ttk.Button(buttons,text='添加全部公共帧',command=lambda:self.add_series_frames(True)).pack(side='left',padx=5)
-        ttk.Button(buttons,text='移除',command=self.remove_states).pack(side='left')
-        ttk.Button(buttons,text='清空',command=self.clear_states).pack(side='left',padx=5)
+        btn_row1=ttk.Frame(buttons); btn_row1.pack(fill='x')
+        ttk.Button(btn_row1,text='添加所选帧',command=lambda:self.add_series_frames(False)).pack(side='left')
+        ttk.Button(btn_row1,text='添加全部公共帧',command=lambda:self.add_series_frames(True)).pack(side='left',padx=5)
+        btn_row2=ttk.Frame(buttons); btn_row2.pack(fill='x',pady=(4,0))
+        ttk.Button(btn_row2,text='移除',command=self.remove_states).pack(side='left')
+        ttk.Button(btn_row2,text='清空',command=self.clear_states).pack(side='left',padx=5)
 
         # right fields / derived / log
-        fields = ttk.LabelFrame(right,text='Field Output',padding=8); fields.pack(fill='x',expand=False,pady=(0,7))
+        fields = Section(right,text='Field Output'); fields.pack(fill='x',expand=False,pady=(0,10))
         tb=ttk.Frame(fields); tb.pack(fill='x')
-        ttk.Button(tb,text='读取当前帧变量',command=self.read_fields).pack(side='left')
-        ttk.Button(tb,text='全选',command=lambda:self.fields_lb.select_set(0,'end')).pack(side='left',padx=5)
-        ttk.Button(tb,text='清空',command=lambda:self.fields_lb.selection_clear(0,'end')).pack(side='left')
-        self.fields_lb=tk.Listbox(fields,selectmode='extended',exportselection=False,height=9); self.fields_lb.pack(fill='both',expand=True,pady=(6,0))
+        ttk.Button(tb,text='读取当前帧变量',style='Small.TButton',command=self.read_fields).pack(side='left')
+        ttk.Button(tb,text='全选',style='Small.TButton',command=lambda:self.fields_lb.select_set(0,'end')).pack(side='left',padx=5)
+        ttk.Button(tb,text='清空',style='Small.TButton',command=lambda:self.fields_lb.selection_clear(0,'end')).pack(side='left')
+        self.fields_lb=tk.Listbox(fields,selectmode='extended',exportselection=False,height=6); self.fields_lb.pack(fill='both',expand=True,pady=(6,0))
         self.fields_lb.bind('<<ListboxSelect>>', lambda e:self.update_export_summary())
 
-        drv=ttk.LabelFrame(right,text='派生场 / Derived Fields',padding=8); drv.pack(fill='x',pady=(0,7))
+        drv=Section(right,text='派生场 / Derived Fields'); drv.pack(fill='x',pady=(0,10))
         rr=ttk.Frame(drv); rr.pack(fill='x')
-        ttk.Checkbutton(rr,text='Mises 应力',variable=self.mises_var).pack(side='left')
-        ttk.Checkbutton(rr,text='Initial IPF (HCP Ti)',variable=self.ipf_var).pack(side='left',padx=12)
-        ttk.Label(rr,text='IPF方向').pack(side='left')
-        ttk.Combobox(rr,textvariable=self.ipf_dir,values=['X','Y','Z'],state='readonly',width=5).pack(side='left',padx=4)
+        Check(rr,text='Mises 应力',variable=self.mises_var).pack(side='left')
+        Check(rr,text='Initial IPF (HCP Ti)',variable=self.ipf_var).pack(side='left',padx=12)
+        rr_dir=ttk.Frame(drv); rr_dir.pack(fill='x',pady=(5,0))
+        ttk.Label(rr_dir,text='IPF方向').pack(side='left')
+        ttk.Combobox(rr_dir,textvariable=self.ipf_dir,values=['X','Y','Z'],state='readonly',width=6).pack(side='left',padx=4)
         rr2=ttk.Frame(drv); rr2.pack(fill='x',pady=(5,0))
         ttk.Label(rr2,text='INP').pack(side='left')
         ttk.Entry(rr2,textvariable=self.inp_var).pack(side='left',fill='x',expand=True,padx=5)
-        ttk.Button(rr2,text='...',width=4,command=self.browse_inp).pack(side='left')
+        ttk.Button(rr2,text='...',width=3,style='Small.TButton',command=self.browse_inp).pack(side='left')
         rr3=ttk.Frame(drv); rr3.pack(fill='x',pady=(5,0))
         ttk.Label(rr3,text='Bounding Box').pack(side='left')
         ttk.Entry(rr3,textvariable=self.bbox_var).pack(side='left',fill='x',expand=True,padx=5)
-        ttk.Label(rr3,text='xmin,xmax,ymin,ymax,zmin,zmax').pack(side='left')
+        bbox_hint = ttk.Label(drv,text='xmin,xmax,ymin,ymax,zmin,zmax',
+                              style='Muted.TLabel')
+        bbox_hint.pack(anchor='w',pady=(3,0))
+        auto_wrap(bbox_hint)
 
-        gnd=ttk.LabelFrame(right,text='GND增量 / GND Evolution',padding=8); gnd.pack(fill='x',pady=(0,7))
-        gr1=ttk.Frame(gnd); gr1.pack(fill='x')
-        ttk.Checkbutton(gr1,text='计算 gnd_field.dat 与 SDV11–28 差值',variable=self.gnd_diff_var).pack(side='left')
-        ttk.Label(gr1,text='输出').pack(side='left',padx=(12,3))
-        self.gnd_mode_cb=ttk.Combobox(gr1,textvariable=self.gnd_mode_var,state='readonly',width=46,values=['仅18滑移系 / 18 slips only','18滑移系+9方向 / 18 slips + 9 directions'])
-        self.gnd_mode_cb.pack(side='left')
-        gr2=ttk.Frame(gnd); gr2.pack(fill='x',pady=(5,0))
+        gnd=Section(right,text='GND增量 / GND Evolution'); gnd.pack(fill='x',pady=(0,10))
+        Check(gnd,text='计算 gnd_field.dat 与 SDV11–28 差值',variable=self.gnd_diff_var).pack(anchor='w')
+        gr1=ttk.Frame(gnd); gr1.pack(fill='x',pady=(4,0))
+        ttk.Label(gr1,text='输出').pack(side='left')
+        self.gnd_mode_cb=ttk.Combobox(gr1,textvariable=self.gnd_mode_var,state='readonly',values=['仅18滑移系 / 18 slips only','18滑移系+9方向 / 18 slips + 9 directions'])
+        self.gnd_mode_cb.pack(side='left',fill='x',expand=True,padx=(6,0))
+
+        gr2=ttk.Frame(gnd); gr2.pack(fill='x',pady=(4,0))
         ttk.Label(gr2,text='gnd_field.dat').pack(side='left')
         ttk.Entry(gr2,textvariable=self.gnd_dat_var).pack(side='left',fill='x',expand=True,padx=5)
-        ttk.Button(gr2,text='...',width=4,command=self.browse_gnd_dat).pack(side='left')
-        gr3=ttk.Frame(gnd); gr3.pack(fill='x',pady=(7,0))
-        ttk.Checkbutton(gr3,text='滑动起点差值（18滑移系）',variable=self.gnd_slide_diff_var).pack(side='left')
-        ttk.Label(gr3,text='参考').pack(side='left',padx=(12,3))
-        self.gnd_slide_ref_cb=ttk.Combobox(gr3,textvariable=self.gnd_slide_ref_var,state='readonly',width=32,values=[
+        ttk.Button(gr2,text='...',width=3,style='Small.TButton',command=self.browse_gnd_dat).pack(side='left')
+        Check(gnd,text='滑动起点差值（18滑移系）',variable=self.gnd_slide_diff_var).pack(anchor='w',pady=(7,0))
+        gr3=ttk.Frame(gnd); gr3.pack(fill='x',pady=(4,0))
+        ttk.Label(gr3,text='参考').pack(side='left')
+        self.gnd_slide_ref_cb=ttk.Combobox(gr3,textvariable=self.gnd_slide_ref_var,state='readonly',values=[
             '滑动第一帧 / First sliding frame',
             '滑动前一步最后帧 / Previous-step last frame'])
-        self.gnd_slide_ref_cb.pack(side='left')
-        ttk.Label(gnd,text='DAT差值：当前SDV11–28减去gnd_field.dat初始分配；滑动起点差值：当前SDV11–28减去固定参考帧。DAT差值可选输出「18滑移系」或「18滑移系+9方向」（后者额外输出 DGND_Dir01-09 九个 Burgers 方向增量）；滑动起点差值固定只输出18个滑移系。',foreground='#555').pack(anchor='w',pady=(5,0))
+        self.gnd_slide_ref_cb.pack(side='left',fill='x',expand=True,padx=(6,0))
+        gnd_hint = ttk.Label(gnd,text='DAT差值：当前SDV11–28减去gnd_field.dat初始分配；滑动起点差值：当前SDV11–28减去固定参考帧。DAT差值可选输出「18滑移系」或「18滑移系+9方向」（后者额外输出 DGND_Dir01-09 九个 Burgers 方向增量）；滑动起点差值固定只输出18个滑移系。',foreground='#555',justify='left')
+        gnd_hint.pack(anchor='w',pady=(6,0))
+        auto_wrap(gnd_hint)
 
-        diff=ttk.LabelFrame(right,text='差值 / Difference',padding=8); diff.pack(fill='x',pady=(0,7))
-        d=ttk.Frame(diff); d.pack(fill='x')
-        ttk.Checkbutton(d,text='启用目标帧-参考帧',variable=self.delta_var).pack(side='left')
-        self.delta_field_cb=ttk.Combobox(d,textvariable=self.delta_field,state='readonly',width=18); self.delta_field_cb.pack(side='left',padx=5)
-        self.ref_step_cb=ttk.Combobox(d,state='readonly',width=26); self.ref_step_cb.pack(side='left',padx=5)
+        diff=Section(right,text='差值 / Difference'); diff.pack(fill='x',pady=(0,10))
+        Check(diff,text='启用目标帧-参考帧',variable=self.delta_var).pack(anchor='w')
+        d1=ttk.Frame(diff); d1.pack(fill='x',pady=(4,0))
+        ttk.Label(d1,text='差值变量 / Field').pack(side='left')
+        self.delta_field_cb=ttk.Combobox(d1,textvariable=self.delta_field,state='readonly')
+        self.delta_field_cb.pack(side='left',fill='x',expand=True,padx=(6,0))
+        d2=ttk.Frame(diff); d2.pack(fill='x',pady=(4,0))
+        ttk.Label(d2,text='参考 Step/Frame').pack(side='left')
+        self.ref_step_cb=ttk.Combobox(d2,state='readonly')
+        self.ref_step_cb.pack(side='left',fill='x',expand=True,padx=(6,4))
         self.ref_step_cb.bind('<<ComboboxSelected>>',lambda e:self.populate_ref_frames())
-        self.ref_frame_cb=ttk.Combobox(d,state='readonly',width=10); self.ref_frame_cb.pack(side='left')
+        self.ref_frame_cb=ttk.Combobox(d2,state='readonly',width=6); self.ref_frame_cb.pack(side='left')
 
-        policy=ttk.LabelFrame(right,text='增量更新策略 / Incremental Update Policy',padding=8); policy.pack(fill='x',pady=(0,7))
+        policy=Section(right,text='增量更新策略 / Incremental Update Policy'); policy.pack(fill='x',pady=(0,10))
         pr1=ttk.Frame(policy); pr1.pack(fill='x')
         ttk.Label(pr1,text='帧 / Frames').pack(side='left')
         self.frame_policy_cb=ttk.Combobox(
-            pr1,textvariable=self.frame_policy_var,state='readonly',width=34,
+            pr1,textvariable=self.frame_policy_var,state='readonly',
             values=['合并/保留既有帧 / Merge','同步当前选择 / Sync'])
-        self.frame_policy_cb.pack(side='left',padx=(6,16))
-        ttk.Label(pr1,text='变量 / Fields').pack(side='left')
+        self.frame_policy_cb.pack(side='left',fill='x',expand=True,padx=(6,0))
+        pr2=ttk.Frame(policy); pr2.pack(fill='x',pady=(4,0))
+        ttk.Label(pr2,text='变量 / Fields').pack(side='left')
         self.field_policy_cb=ttk.Combobox(
-            pr1,textvariable=self.field_policy_var,state='readonly',width=36,
+            pr2,textvariable=self.field_policy_var,state='readonly',
             values=['合并/保留既有变量 / Merge','同步当前变量 / Sync'])
-        self.field_policy_cb.pack(side='left',padx=6)
-        cr=ttk.Frame(policy); cr.pack(fill='x',pady=(7,0))
-        ttk.Label(cr,text='旧版数据兼容模式 / Compatibility').pack(side='left')
+        self.field_policy_cb.pack(side='left',fill='x',expand=True,padx=(6,0))
+        cr=ttk.Frame(policy); cr.pack(fill='x',pady=(4,0))
+        ttk.Label(cr,text='兼容模式 / Compatibility').pack(side='left')
         self.compatibility_mode_cb=ttk.Combobox(
-            cr,textvariable=self.compatibility_mode_var,state='readonly',width=42,
+            cr,textvariable=self.compatibility_mode_var,state='readonly',
             values=['标准增量（已有 Manifest）','快速兼容（推荐）','严格验证（逐帧核对数值）'])
-        self.compatibility_mode_cb.pack(side='left',padx=6)
+        self.compatibility_mode_cb.pack(side='left',fill='x',expand=True,padx=(6,0))
         self.compatibility_mode_cb.current(1)
-        self.in_place_cb = ttk.Checkbutton(
+        self.in_place_cb = Check(
             policy,
             text='原位增量更新已有 VTU / In-place update existing VTUs (no new folder)',
             variable=self.write_mode_var,
@@ -576,32 +1225,33 @@ class App(tk.Tk):
         self.compat_hint = ttk.Label(
             policy,
             text='安全复制模式：无 Manifest 的旧数据会复制到 MIGRATED_SAFE；勾选原位更新后不创建新数据目录，直接更新原 VTU。 / Safe-copy mode creates MIGRATED_SAFE for manifest-less legacy data; in-place mode updates the original VTUs without a new data directory.',
-            foreground='#555')
+            foreground='#555', justify='left')
         self.compat_hint.pack(anchor='w',pady=(3,0))
+        auto_wrap(self.compat_hint)
         pr2=ttk.Frame(policy); pr2.pack(fill='x',pady=(5,0))
-        ttk.Checkbutton(
+        Check(
             pr2,text='同步帧时同时删除已移除帧的 VTU / Delete removed-frame VTU files',
             variable=self.cleanup_removed_var,
             command=self.update_export_summary).pack(side='left')
-        ttk.Label(
+        merge_hint = ttk.Label(
             policy,
             text='Merge 为安全默认：未再次选择的旧帧/旧变量均保留；Sync 才执行删除语义。',
-            foreground='#555').pack(anchor='w',pady=(5,0))
+            foreground='#555',justify='left')
+        merge_hint.pack(anchor='w',pady=(6,0))
+        auto_wrap(merge_hint)
 
-        summary_box=ttk.LabelFrame(right,text='选择摘要 / Selection Summary',padding=6); summary_box.pack(fill='both',expand=True,pady=(0,7))
-        self.summary=tk.Text(summary_box,height=8,wrap='none',state='disabled')
+        summary_box=Section(right,text='选择摘要 / Selection Summary'); summary_box.pack(fill='both',expand=True,pady=(0,10))
+        self.summary=tk.Text(summary_box,height=6,wrap='none',state='disabled')
         self.summary.pack(fill='both',expand=True)
 
-        actions=ttk.Frame(right); actions.pack(fill='x',pady=(0,7))
-        ttk.Button(actions,text='导出 VTU / PVD',command=self.run_export).pack(side='left')
-        ttk.Button(actions,text='打开输出目录',command=lambda:self.open_folder(Path(self.output_file.get()).parent)).pack(side='left',padx=5)
-        self.status_var=tk.StringVar(value='Ready')
-        ttk.Label(actions,textvariable=self.status_var).pack(side='left',padx=12)
+        ttk.Button(actions,text='导出 VTU / PVD',style='Primary.TButton',command=self.run_export).pack(side='right')
+        ttk.Button(actions,text='打开输出目录',command=lambda:self.open_folder(Path(self.output_file.get()).parent)).pack(side='right',padx=(0,8))
+        ttk.Label(actions,text='VTU 可直接在 ParaView 中打开 / Opens directly in ParaView',style='Muted.TLabel').pack(side='left')
 
-        msg_box=ttk.LabelFrame(right,text='输出信息 / Output Messages',padding=6); msg_box.pack(fill='both',expand=True)
+        msg_box=Section(right,text='输出信息 / Output Messages'); msg_box.pack(fill='both',expand=True)
         msg_head=ttk.Frame(msg_box); msg_head.pack(fill='x')
         ttk.Button(msg_head,text='清空 / Clear',command=lambda:self.log.delete('1.0','end')).pack(side='right')
-        self.log=tk.Text(msg_box,height=8,wrap='none')
+        self.log=tk.Text(msg_box,height=6,wrap='none')
         self.log.pack(fill='both',expand=True,pady=(4,0))
 
         self.instance_cb.bind('<<ComboboxSelected>>', lambda e:(self.refresh_sets(),self.update_export_summary()))
@@ -619,21 +1269,21 @@ class App(tk.Tk):
     # ---------------- Curve tab ----------------
     def _build_curve_tab(self):
         root=self.curve_tab
-        outer=ttk.Panedwindow(root,orient='horizontal'); outer.pack(fill='both',expand=True,padx=8,pady=8)
-        left_host,left=self._make_scrollable_pane(outer,padding=4)
-        right_host,right=self._make_scrollable_pane(outer,padding=4)
-        outer.add(left_host,weight=3); outer.add(right_host,weight=4)
-        src=ttk.LabelFrame(left,text='History Source',padding=8); src.pack(fill='x',pady=(0,7))
+        outer=ttk.Panedwindow(root,orient='horizontal'); outer.pack(fill='both',expand=True,padx=(24,8),pady=(16,8))
+        left_host,left=self._make_scrollable_pane(outer,padding=0)
+        right_host,right=self._make_scrollable_pane(outer,padding=0)
+        outer.add(left_host,weight=4); outer.add(right_host,weight=5)
+        src=Section(left,text='History Source'); src.pack(fill='x',pady=(0,10))
         self.curve_odb=tk.StringVar()
         r=ttk.Frame(src); r.pack(fill='x')
-        ttk.Entry(r,textvariable=self.curve_odb).pack(side='left',fill='x',expand=True)
+        ttk.Entry(r,textvariable=self.curve_odb,width=6).pack(side='left',fill='x',expand=True)
         ttk.Button(r,text='选择ODB',command=self.curve_browse_odb).pack(side='left',padx=5)
         ttk.Button(r,text='读取History元数据',command=self.curve_read_meta).pack(side='left')
         ttk.Label(src,text='Steps（Ctrl/Shift多选）').pack(anchor='w',pady=(6,0))
-        self.curve_steps=tk.Listbox(src,selectmode='extended',height=8,exportselection=False); self.curve_steps.pack(fill='x')
+        self.curve_steps=tk.Listbox(src,selectmode='extended',height=4,exportselection=False); self.curve_steps.pack(fill='x')
         self.curve_steps.bind('<<ListboxSelect>>',lambda e:self.curve_refresh_regions())
 
-        rg=ttk.LabelFrame(left,text='History Region / Section',padding=8); rg.pack(fill='x',pady=(0,7))
+        rg=Section(left,text='History Region / Section'); rg.pack(fill='x',pady=(0,10))
         self.curve_region=ttk.Combobox(rg,state='readonly'); self.curve_region.pack(fill='x')
         self.curve_region.bind('<<ComboboxSelected>>',lambda e:self.curve_refresh_vars())
         nf=ttk.Frame(rg); nf.pack(fill='x',pady=(5,0))
@@ -641,67 +1291,96 @@ class App(tk.Tk):
         self.curve_node=tk.StringVar(); ttk.Entry(nf,textvariable=self.curve_node,width=12).pack(side='left',padx=5)
         ttk.Button(nf,text='查找节点',command=self.curve_find_node).pack(side='left')
 
-        cv=ttk.LabelFrame(left,text='Curve',padding=8); cv.pack(fill='x')
+        cv=Section(left,text='Curve'); cv.pack(fill='x')
         self.curve_preset=tk.StringVar(value='Custom')
         presets=['Custom','RF1-U1','CF2-U2','RF2-U2','COF-Time','COF-U1','U2-Time']
         p=ttk.Combobox(cv,textvariable=self.curve_preset,values=presets,state='readonly'); p.pack(fill='x'); p.bind('<<ComboboxSelected>>',lambda e:self.curve_apply_preset())
-        rr=ttk.Frame(cv); rr.pack(fill='x',pady=5)
-        ttk.Label(rr,text='X').pack(side='left'); self.curve_x=ttk.Combobox(rr,state='readonly',width=20); self.curve_x.pack(side='left',padx=5)
-        ttk.Label(rr,text='Y').pack(side='left'); self.curve_y=ttk.Combobox(rr,state='readonly',width=20); self.curve_y.pack(side='left',padx=5)
         self.x_abs=tk.BooleanVar(); self.y_abs=tk.BooleanVar(); self.dedupe=tk.BooleanVar(value=True)
-        ttk.Checkbutton(rr,text='|X|',variable=self.x_abs).pack(side='left'); ttk.Checkbutton(rr,text='|Y|',variable=self.y_abs).pack(side='left')
-        rr2=ttk.Frame(cv); rr2.pack(fill='x')
+        rx=ttk.Frame(cv); rx.pack(fill='x',pady=(5,2))
+        ttk.Label(rx,text='X').pack(side='left',padx=(0,5))
+        self.curve_x=ttk.Combobox(rx,state='readonly'); self.curve_x.pack(side='left',fill='x',expand=True)
+        Check(rx,text='|X|',variable=self.x_abs).pack(side='left',padx=(4,0))
+        ry=ttk.Frame(cv); ry.pack(fill='x',pady=2)
+        ttk.Label(ry,text='Y').pack(side='left',padx=(0,5))
+        self.curve_y=ttk.Combobox(ry,state='readonly'); self.curve_y.pack(side='left',fill='x',expand=True)
+        Check(ry,text='|Y|',variable=self.y_abs).pack(side='left',padx=(4,0))
+        rr2=ttk.Frame(cv); rr2.pack(fill='x',pady=(8,0))
         self.x_scale=tk.StringVar(value='1'); self.y_scale=tk.StringVar(value='1'); self.x_off=tk.StringVar(value='0'); self.y_off=tk.StringVar(value='0')
-        for lab,var in [('X scale',self.x_scale),('X offset',self.x_off),('Y scale',self.y_scale),('Y offset',self.y_off)]:
-            ttk.Label(rr2,text=lab).pack(side='left'); ttk.Entry(rr2,textvariable=var,width=8).pack(side='left',padx=(3,8))
-        ttk.Checkbutton(cv,text='去除Step边界重复点',variable=self.dedupe).pack(anchor='w',pady=(5,0))
+        for i,(lab,var) in enumerate((('X 缩放 / X scale',self.x_scale),('X 偏移 / X offset',self.x_off),
+                                      ('Y 缩放 / Y scale',self.y_scale),('Y 偏移 / Y offset',self.y_off))):
+            row,col=divmod(i,2)
+            ttk.Label(rr2,text=lab).grid(row=row,column=col*2,sticky='w',pady=3)
+            ttk.Entry(rr2,textvariable=var,width=8).grid(row=row,column=col*2+1,sticky='ew',pady=3,padx=(5,16))
+        rr2.columnconfigure(1,weight=1); rr2.columnconfigure(3,weight=1)
+        Check(cv,text='去除Step边界重复点',variable=self.dedupe).pack(anchor='w',pady=(8,0))
 
-        out=ttk.LabelFrame(right,text='输出 / Output',padding=8); out.pack(fill='x',pady=(0,7))
+        out=Section(right,text='输出 / Output'); out.pack(fill='x',pady=(0,10))
         self.curve_auto=tk.BooleanVar(value=True); self.curve_out=tk.StringVar()
         rr=ttk.Frame(out); rr.pack(fill='x')
-        ttk.Checkbutton(rr,text='自动输出到 ODB/ODB2VTU_Output',variable=self.curve_auto,command=self.curve_update_out).pack(side='left')
+        Check(rr,text='自动输出到 ODB/ODB2VTU_Output',variable=self.curve_auto,command=self.curve_update_out).pack(side='left')
         ttk.Button(rr,text='选择文件夹',command=self.curve_choose_folder).pack(side='left',padx=6)
         rr2=ttk.Frame(out); rr2.pack(fill='x',pady=5)
         ttk.Entry(rr2,textvariable=self.curve_out).pack(side='left',fill='x',expand=True)
-        ttk.Button(rr2,text='...',width=4,command=self.curve_choose_file).pack(side='left',padx=5)
-        ttk.Button(out,text='导出 CSV',command=self.curve_export).pack(anchor='w')
-        ttk.Button(out,text='导出摩擦专用 CSV（ALL / NORMAL / TANGENTIAL / DIAGNOSTIC）',command=self.curve_export_friction).pack(anchor='w',pady=4)
-        self.curve_log=tk.Text(right,wrap='none'); self.curve_log.pack(fill='both',expand=True)
+        ttk.Button(rr2,text='...',width=3,style='Small.TButton',command=self.curve_choose_file).pack(side='left',padx=5)
+        top=ttk.Frame(out); top.pack(fill='x',pady=(12,0))
+        ttk.Button(top,text='导出摩擦专用 CSV',command=self.curve_export_friction).pack(side='left')
+        ttk.Label(out,text='ALL / NORMAL / TANGENTIAL / DIAGNOSTIC',style='Muted.TLabel').pack(anchor='w',pady=(4,0))
+        bot=ttk.Frame(out); bot.pack(fill='x',pady=(8,0))
+        ttk.Button(bot,text='导出 CSV',style='Primary.TButton',command=self.curve_export).pack(side='right')
+        logbox=Section(right,text='日志 / Log'); logbox.pack(fill='both',expand=True)
+        self.curve_log=tk.Text(logbox,wrap='none',height=8); self.curve_log.pack(fill='both',expand=True)
 
     # ---------------- Analysis tab ----------------
     def _build_analysis_tab(self):
         root=self.analysis_tab
-        pan=ttk.Panedwindow(root,orient='horizontal'); pan.pack(fill='both',expand=True,padx=8,pady=8)
-        left_host,left=self._make_scrollable_pane(pan,padding=4)
-        right_host,right=self._make_scrollable_pane(pan,padding=4)
-        pan.add(left_host,weight=3); pan.add(right_host,weight=5)
-        data=ttk.LabelFrame(left,text='Data State',padding=8); data.pack(fill='x',pady=(0,7))
-        self.a_instance=ttk.Combobox(data,state='readonly'); self.a_instance.pack(fill='x',pady=2)
-        self.a_step=ttk.Combobox(data,state='readonly'); self.a_step.pack(fill='x',pady=2); self.a_step.bind('<<ComboboxSelected>>',lambda e:self.analysis_frames())
-        self.a_frame=ttk.Combobox(data,state='readonly'); self.a_frame.pack(fill='x',pady=2)
-        self.a_field=ttk.Combobox(data,state='readonly'); self.a_field.pack(fill='x',pady=2)
-        ttk.Button(data,text='读取可分析变量',command=self.analysis_read_fields).pack(anchor='w',pady=(5,0))
-        reg=ttk.LabelFrame(left,text='Region',padding=8); reg.pack(fill='x',pady=(0,7))
-        self.a_bbox=tk.StringVar(); ttk.Entry(reg,textvariable=self.a_bbox).pack(fill='x'); ttk.Label(reg,text='可选 Bounding Box: xmin,xmax,ymin,ymax,zmin,zmax').pack(anchor='w')
-        rank=ttk.LabelFrame(left,text='Grain Ranking',padding=8); rank.pack(fill='x',pady=(0,7))
+        bar=tk.Frame(root,bg=BG); bar.pack(side='bottom',fill='x',padx=24,pady=(0,10))
+        tk.Frame(bar,bg=BORDER,height=1).pack(fill='x',pady=(0,10))
+        actions=tk.Frame(bar,bg=BG); actions.pack(fill='x')
+        ttk.Button(actions,text='运行分析',style='Primary.TButton',command=self.analysis_run).pack(side='right')
+        ttk.Button(actions,text='打开输出目录',command=lambda:self.open_folder(self.a_out.get())).pack(side='right',padx=(0,8))
+        ttk.Label(actions,text='分析结果写入独立文件夹 / Results go to a separate folder',style='Muted.TLabel').pack(side='left')
+        pan=ttk.Panedwindow(root,orient='horizontal'); pan.pack(fill='both',expand=True,padx=(24,8),pady=(16,0))
+        left_host,left=self._make_scrollable_pane(pan,padding=0)
+        right_host,right=self._make_scrollable_pane(pan,padding=0)
+        pan.add(left_host,weight=4); pan.add(right_host,weight=5)
+        data=Section(left,text='数据状态 / Data state'); data.pack(fill='x',pady=(0,10))
+        body=ttk.Frame(data); body.pack(fill='x')
+        self.a_instance=ttk.Combobox(body,state='readonly')
+        self.a_step=ttk.Combobox(body,state='readonly')
+        self.a_frame=ttk.Combobox(body,state='readonly')
+        self.a_field=ttk.Combobox(body,state='readonly')
+        for i,(lab,w) in enumerate((('实例 / Instance',self.a_instance),('分析步 / Step',self.a_step),
+                                    ('帧 / Frame',self.a_frame),('变量 / Field',self.a_field))):
+            ttk.Label(body,text=lab,width=16).grid(row=i,column=0,sticky='w',pady=3)
+            w.grid(row=i,column=1,sticky='ew',pady=3)
+        body.columnconfigure(1,weight=1)
+        self.a_step.bind('<<ComboboxSelected>>',lambda e:self.analysis_frames())
+        ttk.Button(data,text='读取可分析变量',command=self.analysis_read_fields).pack(anchor='w',pady=(10,0))
+        reg=Section(left,text='区域 / Region'); reg.pack(fill='x',pady=(0,10))
+        self.a_bbox=tk.StringVar(); ttk.Entry(reg,textvariable=self.a_bbox).pack(fill='x')
+        ttk.Label(reg,text='可选 Bounding Box: xmin,xmax,ymin,ymax,zmin,zmax',style='Muted.TLabel').pack(anchor='w',pady=(4,0))
+        rank=Section(left,text='晶粒排序 / Grain ranking'); rank.pack(fill='x',pady=(0,10))
         self.a_top=tk.StringVar(value='10'); self.a_rank=tk.StringVar(value='mean'); self.a_dir=tk.StringVar(value='max'); self.a_band=tk.StringVar(value='5')
-        for lab,widget in [
-            ('Top N grains',ttk.Entry(rank,textvariable=self.a_top)),
-            ('Rank statistic',ttk.Combobox(rank,textvariable=self.a_rank,values=['mean','max','min'],state='readonly')),
-            ('Direction',ttk.Combobox(rank,textvariable=self.a_dir,values=['max','min'],state='readonly')),
-            ('Extreme band (%)',ttk.Entry(rank,textvariable=self.a_band))]:
-            rr=ttk.Frame(rank); rr.pack(fill='x',pady=2); ttk.Label(rr,text=lab,width=18).pack(side='left'); widget.pack(side='left',fill='x',expand=True)
-        out=ttk.LabelFrame(left,text='Output',padding=8); out.pack(fill='x')
+        for lab,var,values in (
+                ('前 N 个晶粒 / Top N grains',self.a_top,None),
+                ('排序统计量 / Rank statistic',self.a_rank,['mean','max','min']),
+                ('方向 / Direction',self.a_dir,['max','min']),
+                ('极值带 (%) / Extreme band',self.a_band,None)):
+            rr=ttk.Frame(rank); rr.pack(fill='x',pady=3)
+            ttk.Label(rr,text=lab,width=20).pack(side='left')
+            if values is None:
+                ttk.Entry(rr,textvariable=var).pack(side='left',fill='x',expand=True)
+            else:
+                ttk.Combobox(rr,textvariable=var,values=values,state='readonly').pack(side='left',fill='x',expand=True)
+        out=Section(left,text='输出 / Output'); out.pack(fill='x')
         self.a_export_vtu=tk.BooleanVar(value=True); self.a_split=tk.BooleanVar(value=False); self.a_scope=tk.StringVar(value='top'); self.a_out=tk.StringVar()
-        ttk.Checkbutton(out,text='同时导出分析 VTU',variable=self.a_export_vtu).pack(anchor='w')
-        rr=ttk.Frame(out); rr.pack(fill='x',pady=3); ttk.Label(rr,text='VTU范围',width=12).pack(side='left')
+        Check(out,text='同时导出分析 VTU',variable=self.a_export_vtu).pack(anchor='w',pady=2)
+        rr=ttk.Frame(out); rr.pack(fill='x',pady=5); ttk.Label(rr,text='VTU范围',width=12).pack(side='left')
         ttk.Combobox(rr,textvariable=self.a_scope,values=['top','band','extreme','all'],state='readonly').pack(side='left',fill='x',expand=True)
-        ttk.Checkbutton(out,text='每个选中晶粒单独导出VTU',variable=self.a_split).pack(anchor='w')
-        rr2=ttk.Frame(out); rr2.pack(fill='x',pady=4); ttk.Entry(rr2,textvariable=self.a_out).pack(side='left',fill='x',expand=True); ttk.Button(rr2,text='...',width=4,command=self.analysis_choose_out).pack(side='left',padx=4)
-        ttk.Button(out,text='运行分析',command=self.analysis_run).pack(anchor='w')
-        ttk.Button(out,text='打开输出目录',command=lambda:self.open_folder(self.a_out.get())).pack(anchor='w',pady=(5,0))
-        ttk.Label(right,text='Analysis Log / 分析结果').pack(anchor='w')
-        self.analysis_log=tk.Text(right,wrap='none'); self.analysis_log.pack(fill='both',expand=True)
+        Check(out,text='每个选中晶粒单独导出VTU',variable=self.a_split).pack(anchor='w',pady=2)
+        rr2=ttk.Frame(out); rr2.pack(fill='x',pady=(8,0)); ttk.Entry(rr2,textvariable=self.a_out).pack(side='left',fill='x',expand=True); ttk.Button(rr2,text='...',width=3,style='Small.TButton',command=self.analysis_choose_out).pack(side='left',padx=4)
+        logbox=Section(right,text='分析结果 / Analysis Log'); logbox.pack(fill='both',expand=True)
+        self.analysis_log=tk.Text(logbox,wrap='none',height=10); self.analysis_log.pack(fill='both',expand=True)
 
     # ---------------- shared process helpers ----------------
     def abaqus_prefix(self):

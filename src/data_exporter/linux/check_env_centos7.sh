@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ODB2VTU-S Workbench v1.0.0 - CentOS 7 preflight check
+# ODB2VTU-S Workbench v1.0.1 - CentOS 7 preflight check
 #
 # Verifies that this machine can run the Tk GUI and the Abaqus/ODB backends.
 # Read-only: nothing is installed and no existing file is modified.

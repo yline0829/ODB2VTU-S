@@ -1,4 +1,4 @@
-# ODB2VTU-S Workbench v1.0.0 — CentOS 7 安装与使用说明
+# ODB2VTU-S Workbench v1.0.1 — CentOS 7 安装与使用说明
 
 面向 **CentOS 7 + SingularityCE + Abaqus 2024 容器** 的 Linux 版本。
 一个 Tkinter 图形界面（用系统 `python3` 运行）+ 一组 Abaqus Python 后端脚本（在 Abaqus 容器里用 `odbAccess` 运行，负责读 ODB / 导 VTU / 场分析 / CPFEM 后处理 / 安全恢复）。
@@ -60,8 +60,8 @@ PYTHON_BIN=/opt/rh/rh-python38/root/usr/bin/python3 ./launch.sh
 ## 3. 解包与自检
 
 ```bash
-tar xzf ODB2VTU-S_Workbench_Linux_v1.0.0.tar.gz
-cd ODB2VTU-S_Workbench_Linux_v1.0.0
+unzip ODB2VTU-S_Workbench_Linux_v1.0.1.zip
+cd ODB2VTU-S_Workbench_Linux_v1.0.1
 chmod +x *.sh
 
 # 快速自检（不启动 Abaqus）
@@ -195,7 +195,12 @@ GUI 的临时状态文件在 **`~/.cache/odb2vtu-s/`**（`XDG_CACHE_HOME` 优先
 
 ## 10. 版本与改动记录
 
-### v1.0.0（本版）
+### v1.0.1（当前小版本）
+
+- 更新 Linux 工作台布局、侧栏导航、页面切换和中英文界面文本。
+- 保留 v1.0.0 的结果处理后端；Windows 已验证可执行文件未重新编译。
+
+### v1.0.0（历史基准）
 
 1. **Linux 专属扩展：GND 的 9 个 Burgers 方向增量数组**（Windows 版没有此功能）。
    - 「GND 增量」的 DAT 差值新增输出模式：`仅18滑移系`（默认，与 Windows 一致）或 `18滑移系+9方向`；

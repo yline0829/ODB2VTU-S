@@ -1,3 +1,10 @@
+## v1.0.1 — Linux interface refresh (2026-11-13)
+
+- Updated Linux Workbench layout, navigation sidebar and bilingual interface labels.
+- Kept all computational backend files, integration logic, original icons and user data protection unchanged.
+- User-supplied Windows EXE matches the original v1.0.0 validated binary byte-for-byte (SHA-256: `bab33ff40ee8a7201628367f9b020b5736fbe880c703ca24f277fe1c55236c98`).
+- Updated Linux-only version labels. Python 3.6 syntax, shell syntax and virtual-display GUI startup checks passed; numerical ODB processing still needs independent verification.
+
 ## v1.0.0 — User-validated Windows baseline (2026-10-18)
 
 - Adopt the exact user-tested `odb2vtu.exe` as the canonical Windows executable baseline.

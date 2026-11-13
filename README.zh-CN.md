@@ -11,6 +11,8 @@
 
 ODB2VTU-S 是面向 Windows/Linux 的统一工作台，用于从大型 Abaqus ODB 中选择性读取结果，导出 ParaView 可视化数据，并进行晶粒尺度与 CPFEM 后处理。
 
+**当前源码更新（v1.0.1）：** Linux 工作台已更新页面布局、侧栏导航和中英文界面文本。ODB/VTU 数值处理后端及已验证的 Windows 原始 EXE 均未变更。在 v1.0.1 正式 Release 发布之前，下载页仍提供 v1.0.0 安装包。
+
 ## 统一工作台
 
 Windows 版采用清晰的五步操作流程：
